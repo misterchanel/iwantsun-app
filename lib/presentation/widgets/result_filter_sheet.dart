@@ -90,15 +90,6 @@ class _ResultFilterSheetState extends State<ResultFilterSheet> {
                         child: _buildSortOptions(filterProvider),
                       ),
 
-                      const SizedBox(height: 24),
-
-                      // Distance maximum (filtre optionnel)
-                      _buildSection(
-                        title: 'Distance maximum',
-                        icon: Icons.near_me,
-                        child: _buildDistanceFilter(filterProvider),
-                      ),
-
                       const SizedBox(height: 80), // Espace pour le bouton
                     ],
                   ),
@@ -252,68 +243,6 @@ class _ResultFilterSheetState extends State<ResultFilterSheet> {
     );
   }
 
-  Widget _buildDistanceFilter(ResultFilterProvider provider) {
-    final currentDistance = provider.filters.maxDistance ?? 500.0;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Slider(
-          value: currentDistance,
-          min: 10,
-          max: 500,
-          divisions: 49,
-          activeColor: AppColors.primaryOrange,
-          label: '${currentDistance.toInt()} km',
-          onChanged: (value) {
-            provider.setMaxDistance(value);
-          },
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                '10 km',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.mediumGray,
-                ),
-              ),
-              Text(
-                currentDistance == 500
-                    ? 'Illimitée'
-                    : '${currentDistance.toInt()} km',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primaryOrange,
-                ),
-              ),
-              const Text(
-                '500 km',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.mediumGray,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (provider.filters.maxDistance != null)
-          TextButton.icon(
-            onPressed: () => provider.setMaxDistance(null),
-            icon: const Icon(Icons.close, size: 18),
-            label: const Text('Supprimer le filtre'),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.mediumGray,
-            ),
-          ),
-      ],
-    );
-  }
 }
 
 /// Fonction helper pour afficher le bottom sheet de filtres

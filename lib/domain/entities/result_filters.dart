@@ -6,6 +6,7 @@ enum SortOption {
   bestScore, // Meilleur score météo (par défaut)
   temperature, // Température décroissante (du plus chaud au moins chaud)
   weatherCondition, // Conditions météo (du mieux au pire)
+  distance, // Distance croissante (du plus proche au plus loin)
 }
 
 /// Gamme de prix
@@ -29,7 +30,6 @@ class ResultFilters extends Equatable {
   final SortOption sortBy;
   final Set<PriceRange> priceRanges;
   final double? minRating;
-  final double? maxDistance;
   final int? minActivities;
   final Set<AccommodationType> accommodationTypes;
 
@@ -37,7 +37,6 @@ class ResultFilters extends Equatable {
     this.sortBy = SortOption.bestScore,
     this.priceRanges = const {},
     this.minRating,
-    this.maxDistance,
     this.minActivities,
     this.accommodationTypes = const {},
   });
@@ -47,7 +46,6 @@ class ResultFilters extends Equatable {
     SortOption? sortBy,
     Set<PriceRange>? priceRanges,
     double? minRating,
-    double? maxDistance,
     int? minActivities,
     Set<AccommodationType>? accommodationTypes,
   }) {
@@ -55,7 +53,6 @@ class ResultFilters extends Equatable {
       sortBy: sortBy ?? this.sortBy,
       priceRanges: priceRanges ?? this.priceRanges,
       minRating: minRating ?? this.minRating,
-      maxDistance: maxDistance ?? this.maxDistance,
       minActivities: minActivities ?? this.minActivities,
       accommodationTypes: accommodationTypes ?? this.accommodationTypes,
     );
@@ -71,7 +68,6 @@ class ResultFilters extends Equatable {
     int count = 0;
     if (priceRanges.isNotEmpty) count++;
     if (minRating != null) count++;
-    if (maxDistance != null) count++;
     if (minActivities != null) count++;
     if (accommodationTypes.isNotEmpty) count++;
     return count;
@@ -85,7 +81,6 @@ class ResultFilters extends Equatable {
         sortBy,
         priceRanges,
         minRating,
-        maxDistance,
         minActivities,
         accommodationTypes,
       ];
@@ -101,6 +96,8 @@ extension SortOptionExtension on SortOption {
         return 'Température';
       case SortOption.weatherCondition:
         return 'Conditions météo';
+      case SortOption.distance:
+        return 'Distance';
     }
   }
 
@@ -112,6 +109,8 @@ extension SortOptionExtension on SortOption {
         return Icons.thermostat;
       case SortOption.weatherCondition:
         return Icons.cloud;
+      case SortOption.distance:
+        return Icons.near_me;
     }
   }
 }

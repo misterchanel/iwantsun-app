@@ -46,13 +46,6 @@ class ResultFilterProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Définit la distance maximum
-  void setMaxDistance(double? distance) {
-    _filters = _filters.copyWith(maxDistance: distance);
-    _applyFilters();
-    notifyListeners();
-  }
-
   /// Définit le nombre d'activités minimum
   void setMinActivities(int? activities) {
     _filters = _filters.copyWith(minActivities: activities);
@@ -102,14 +95,6 @@ class ResultFilterProvider extends ChangeNotifier {
         // Filtre par note (simulé)
         if (_filters.minRating != null) {
           // TODO: Filtrer par note réelle des hôtels
-        }
-
-        // Filtre par distance
-        if (_filters.maxDistance != null) {
-          if (result.location.distanceFromCenter != null &&
-              result.location.distanceFromCenter! > _filters.maxDistance!) {
-            return false;
-          }
         }
 
         // Filtre par nombre d'activités (simulé)
@@ -165,6 +150,11 @@ class ResultFilterProvider extends ChangeNotifier {
               ? conditionScore(b.weatherForecast.forecasts.first.condition)
               : 0;
           return condB.compareTo(condA);
+
+        case SortOption.distance:
+          final distA = a.location.distanceFromCenter ?? double.infinity;
+          final distB = b.location.distanceFromCenter ?? double.infinity;
+          return distA.compareTo(distB);
       }
     });
 
