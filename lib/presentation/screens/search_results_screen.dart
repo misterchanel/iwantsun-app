@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:iwantsun/core/theme/app_colors.dart';
+import 'package:iwantsun/core/services/gamification_service.dart';
+import 'package:iwantsun/core/services/analytics_service.dart';
 import 'package:iwantsun/domain/entities/search_result.dart';
 import 'package:iwantsun/presentation/providers/search_provider.dart';
 import 'package:iwantsun/presentation/providers/search_state.dart';
@@ -11,6 +14,7 @@ import 'package:iwantsun/presentation/widgets/result_filter_sheet.dart';
 import 'package:iwantsun/presentation/providers/result_filter_provider.dart';
 import 'package:iwantsun/presentation/widgets/empty_state.dart';
 import 'package:iwantsun/presentation/widgets/favorite_button.dart';
+import 'package:iwantsun/presentation/widgets/interactive_map.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -25,10 +29,19 @@ class SearchResultsScreen extends StatefulWidget {
 class _SearchResultsScreenState extends State<SearchResultsScreen> {
   static const int _itemsPerPage = 10;
   int _displayedItemsCount = 10;
+  bool _showMapView = false;
+  SearchResult? _selectedResult;
 
   void _loadMore(int totalItems) {
     setState(() {
       _displayedItemsCount = (_displayedItemsCount + _itemsPerPage).clamp(0, totalItems);
+    });
+  }
+
+  void _toggleView() {
+    setState(() {
+      _showMapView = !_showMapView;
+      _selectedResult = null;
     });
   }
 
@@ -60,6 +73,19 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         backgroundColor: AppColors.primaryOrange,
         foregroundColor: AppColors.white,
         actions: [
+          // Bouton toggle vue liste/carte
+          Consumer<SearchProvider>(
+            builder: (context, searchProvider, _) {
+              if (searchProvider.hasResults) {
+                return IconButton(
+                  icon: Icon(_showMapView ? Icons.list : Icons.map),
+                  onPressed: _toggleView,
+                  tooltip: _showMapView ? 'Vue liste' : 'Vue carte',
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
           Consumer2<SearchProvider, ResultFilterProvider>(
             builder: (context, searchProvider, filterProvider, _) {
               if (searchProvider.hasResults) {
@@ -178,7 +204,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               builder: (context, filterProvider, _) {
                 final resultsToDisplay =
                     filterProvider.filteredResults ?? state.results;
-                return _buildSuccessState(context, resultsToDisplay);
+                return _showMapView
+                    ? _buildMapView(context, resultsToDisplay)
+                    : _buildSuccessState(context, resultsToDisplay);
               },
             );
           }
@@ -328,6 +356,112 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         ),
       ],
       ),
+    );
+  }
+
+  Widget _buildMapView(BuildContext context, List<SearchResult> results) {
+    if (results.isEmpty) {
+      return const NoResultsFound();
+    }
+
+    // Calculer le centre de la carte (moyenne des positions)
+    double avgLat = 0;
+    double avgLng = 0;
+    for (final result in results) {
+      avgLat += result.location.latitude;
+      avgLng += result.location.longitude;
+    }
+    avgLat /= results.length;
+    avgLng /= results.length;
+
+    // Créer les marqueurs
+    final markers = results.map((result) {
+      return MapMarker.fromSearchResult(result);
+    }).toList();
+
+    return Stack(
+      children: [
+        // Carte interactive
+        InteractiveMap(
+          center: LatLng(avgLat, avgLng),
+          zoom: 6,
+          markers: markers,
+          onMarkerTap: (marker) {
+            final result = marker.data as SearchResult?;
+            if (result != null) {
+              setState(() {
+                _selectedResult = result;
+              });
+            }
+          },
+        ),
+
+        // Carte de destination sélectionnée en bas
+        if (_selectedResult != null)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16,
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedResult = null;
+                });
+              },
+              child: DestinationResultCard(result: _selectedResult!),
+            ),
+          ),
+
+        // Bouton pour fermer la sélection
+        if (_selectedResult != null)
+          Positioned(
+            right: 24,
+            bottom: 200,
+            child: FloatingActionButton.small(
+              onPressed: () {
+                setState(() {
+                  _selectedResult = null;
+                });
+              },
+              backgroundColor: AppColors.white,
+              child: const Icon(Icons.close, color: AppColors.darkGray),
+            ),
+          ),
+
+        // Indicateur du nombre de résultats
+        Positioned(
+          left: 16,
+          top: 16,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.place, size: 18, color: AppColors.primaryOrange),
+                const SizedBox(width: 6),
+                Text(
+                  '${results.length} destination${results.length > 1 ? 's' : ''}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -687,13 +821,23 @@ class DestinationResultCard extends StatelessWidget {
     final country = result.location.country ?? '';
     final score = result.overallScore.clamp(0.0, 100.0).toInt();
     final temp = result.weatherForecast.averageTemperature.toStringAsFixed(1);
-    
+
     final shareText = '🌟 Découvrez $locationName$country !\n\n'
         'Score de compatibilité : $score%\n'
         'Température moyenne : ${temp}°C\n\n'
         'Trouvé via IWantSun 🌞';
-    
+
     await Share.share(shareText);
+
+    // Enregistrer le partage dans la gamification
+    try {
+      await GamificationService().recordShare();
+    } catch (e) {
+      // Ignorer les erreurs de gamification
+    }
+
+    // Tracker dans les analytics
+    AnalyticsService().trackShare(result.location.id, 'native_share');
   }
 
   String _getConditionText(String condition) {

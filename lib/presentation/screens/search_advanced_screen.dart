@@ -131,6 +131,14 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
               primary: AppColors.primaryOrange,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: AppColors.textDark,
+            ),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primaryOrange,
+              ),
             ),
           ),
           child: child!,

@@ -3,6 +3,8 @@ import 'package:iwantsun/core/error/failures.dart';
 import 'package:iwantsun/core/services/logger_service.dart';
 import 'package:iwantsun/core/services/network_service.dart';
 import 'package:iwantsun/core/services/search_history_service.dart';
+import 'package:iwantsun/core/services/gamification_service.dart';
+import 'package:iwantsun/core/services/analytics_service.dart';
 import 'package:iwantsun/domain/entities/search_params.dart';
 import 'package:iwantsun/domain/entities/search_result.dart';
 import 'package:iwantsun/domain/usecases/search_locations_usecase.dart';
@@ -13,6 +15,8 @@ class SearchProvider extends ChangeNotifier {
   final SearchLocationsUseCase _searchLocationsUseCase;
   final NetworkService _networkService;
   final SearchHistoryService _historyService;
+  final GamificationService _gamificationService;
+  final AnalyticsService _analyticsService;
   final AppLogger _logger;
 
   SearchState _state = const SearchInitial();
@@ -23,10 +27,14 @@ class SearchProvider extends ChangeNotifier {
     required SearchLocationsUseCase searchLocationsUseCase,
     NetworkService? networkService,
     SearchHistoryService? historyService,
+    GamificationService? gamificationService,
+    AnalyticsService? analyticsService,
     AppLogger? logger,
   })  : _searchLocationsUseCase = searchLocationsUseCase,
         _networkService = networkService ?? NetworkService(),
         _historyService = historyService ?? SearchHistoryService(),
+        _gamificationService = gamificationService ?? GamificationService(),
+        _analyticsService = analyticsService ?? AnalyticsService(),
         _logger = logger ?? AppLogger();
 
   /// Effectue une recherche avec les paramètres donnés
@@ -102,6 +110,22 @@ class SearchProvider extends ChangeNotifier {
       } catch (e) {
         _logger.warning('Failed to save search to history', e);
       }
+
+      // Enregistrer la recherche dans la gamification
+      try {
+        await _gamificationService.recordSearch();
+      } catch (e) {
+        _logger.warning('Failed to record search in gamification', e);
+      }
+
+      // Tracker dans les analytics
+      _analyticsService.trackSearch(
+        location: locationName ?? 'Unknown',
+        minTemp: params.desiredMinTemperature ?? 0,
+        maxTemp: params.desiredMaxTemperature ?? 40,
+        radius: params.searchRadius.toInt(),
+        resultsCount: results.length,
+      );
 
       // Mettre à jour l'état selon les résultats
       if (results.isEmpty) {

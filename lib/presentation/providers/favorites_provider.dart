@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:iwantsun/core/services/favorites_service.dart';
 import 'package:iwantsun/core/services/search_history_service.dart';
+import 'package:iwantsun/core/services/gamification_service.dart';
+import 'package:iwantsun/core/services/analytics_service.dart';
 import 'package:iwantsun/domain/entities/favorite.dart';
 import 'package:iwantsun/domain/entities/search_result.dart';
 
@@ -9,6 +11,8 @@ import 'package:iwantsun/domain/entities/search_result.dart';
 class FavoritesProvider extends ChangeNotifier {
   final FavoritesService _favoritesService = FavoritesService();
   final SearchHistoryService _historyService = SearchHistoryService();
+  final GamificationService _gamificationService = GamificationService();
+  final AnalyticsService _analyticsService = AnalyticsService();
 
   // État des favoris
   List<Favorite> _favorites = [];
@@ -120,6 +124,25 @@ class FavoritesProvider extends ChangeNotifier {
 
     if (success) {
       await loadFavorites();
+
+      // Enregistrer dans la gamification
+      try {
+        await _gamificationService.recordFavoriteAdded();
+
+        // Vérifier si c'est un nouveau pays
+        final country = result.location.country;
+        if (country != null && !uniqueCountries.contains(country)) {
+          await _gamificationService.recordCountryExplored();
+        }
+      } catch (e) {
+        // Ignorer les erreurs de gamification
+      }
+
+      // Tracker dans les analytics
+      _analyticsService.trackFavoriteAdd(
+        result.location.id,
+        result.location.name,
+      );
     }
 
     return success;

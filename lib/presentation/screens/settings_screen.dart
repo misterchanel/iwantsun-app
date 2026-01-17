@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:iwantsun/core/services/user_preferences_service.dart';
 import 'package:iwantsun/core/services/cache_service.dart';
 import 'package:iwantsun/core/theme/app_colors.dart';
+import 'package:iwantsun/presentation/providers/theme_provider.dart';
+import 'package:iwantsun/core/l10n/app_localizations.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -66,6 +69,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     // _buildTemperatureSettings(), // Supprimé selon demande utilisateur
                     // const SizedBox(height: 12),
                     _buildRadiusSettings(),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                _buildSection(
+                  title: 'Apparence',
+                  icon: Icons.palette,
+                  children: [
+                    _buildThemeSelector(),
+                    _buildDivider(),
+                    _buildLanguageSelector(),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -523,6 +536,184 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildThemeSelector() {
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, _) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Thème',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textDark,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _buildThemeOption(
+                    context: context,
+                    icon: Icons.brightness_auto,
+                    label: 'Auto',
+                    isSelected: themeProvider.themeMode == AppThemeMode.system,
+                    onTap: () => themeProvider.setThemeMode(AppThemeMode.system),
+                  ),
+                  const SizedBox(width: 12),
+                  _buildThemeOption(
+                    context: context,
+                    icon: Icons.light_mode,
+                    label: 'Clair',
+                    isSelected: themeProvider.themeMode == AppThemeMode.light,
+                    onTap: () => themeProvider.setThemeMode(AppThemeMode.light),
+                  ),
+                  const SizedBox(width: 12),
+                  _buildThemeOption(
+                    context: context,
+                    icon: Icons.dark_mode,
+                    label: 'Sombre',
+                    isSelected: themeProvider.themeMode == AppThemeMode.dark,
+                    onTap: () => themeProvider.setThemeMode(AppThemeMode.dark),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildThemeOption({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.primaryOrange.withOpacity(0.1)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected ? AppColors.primaryOrange : AppColors.lightGray,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: isSelected ? AppColors.primaryOrange : AppColors.darkGray,
+                size: 24,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? AppColors.primaryOrange : AppColors.darkGray,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLanguageSelector() {
+    return Consumer<LocaleProvider>(
+      builder: (context, localeProvider, _) {
+        final currentLanguage = localeProvider.language;
+
+        return ListTile(
+          title: const Text(
+            'Langue',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textDark,
+            ),
+          ),
+          subtitle: Text(
+            currentLanguage.name,
+            style: TextStyle(
+              fontSize: 12,
+              color: AppColors.darkGray.withOpacity(0.7),
+            ),
+          ),
+          trailing: const Icon(Icons.chevron_right, color: AppColors.darkGray),
+          onTap: () => _showLanguageDialog(context, localeProvider),
+        );
+      },
+    );
+  }
+
+  void _showLanguageDialog(BuildContext context, LocaleProvider localeProvider) {
+    final currentLanguage = localeProvider.language;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Choisir la langue',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ...AppLanguage.values.map((lang) => ListTile(
+              leading: Text(
+                lang.flag,
+                style: const TextStyle(fontSize: 24),
+              ),
+              title: Text(lang.name),
+              trailing: currentLanguage == lang
+                  ? const Icon(Icons.check, color: AppColors.primaryOrange)
+                  : null,
+              onTap: () {
+                localeProvider.setLanguage(lang);
+                Navigator.pop(context);
+              },
+            )),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
   }

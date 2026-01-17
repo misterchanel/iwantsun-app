@@ -22,6 +22,7 @@ import 'package:iwantsun/core/l10n/app_localizations.dart';
 import 'package:iwantsun/core/services/offline_service.dart';
 import 'package:iwantsun/core/services/gamification_service.dart';
 import 'package:iwantsun/core/services/analytics_service.dart';
+import 'package:iwantsun/core/services/user_profile_service.dart';
 
 /// Configuration de tous les providers de l'application
 class ProviderSetup {
@@ -143,6 +144,15 @@ class ProviderSetup {
       Provider<AnalyticsService>(
         create: (_) {
           final service = AnalyticsService();
+          service.init();
+          return service;
+        },
+      ),
+
+      // User Profile Service
+      ChangeNotifierProvider<UserProfileService>(
+        create: (_) {
+          final service = UserProfileService();
           service.init();
           return service;
         },

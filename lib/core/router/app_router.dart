@@ -9,6 +9,8 @@ import 'package:iwantsun/presentation/screens/search_results_screen.dart';
 import 'package:iwantsun/presentation/screens/favorites_screen_enhanced.dart';
 import 'package:iwantsun/presentation/screens/history_screen.dart';
 import 'package:iwantsun/presentation/screens/settings_screen.dart';
+import 'package:iwantsun/presentation/screens/profile_screen.dart';
+import 'package:iwantsun/presentation/screens/badges_screen.dart';
 import 'package:iwantsun/core/theme/app_animations.dart';
 
 /// Configuration du routeur de l'application
@@ -100,6 +102,24 @@ class AppRouter {
           transitionsBuilder: AppAnimations.slideTransition(
             direction: SlideDirection.left,
           ),
+        ),
+      ),
+      GoRoute(
+        path: '/profile',
+        pageBuilder: (context, state) => CustomTransitionPage(
+          key: state.pageKey,
+          child: const ProfileScreen(),
+          transitionsBuilder: AppAnimations.slideTransition(
+            direction: SlideDirection.left,
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/badges',
+        pageBuilder: (context, state) => CustomTransitionPage(
+          key: state.pageKey,
+          child: const BadgesScreen(),
+          transitionsBuilder: AppAnimations.scaleTransition(),
         ),
       ),
     ],
