@@ -6,7 +6,6 @@ enum SortOption {
   bestScore, // Meilleur score météo (par défaut)
   temperature, // Température décroissante (du plus chaud au moins chaud)
   weatherCondition, // Conditions météo (du mieux au pire)
-  distance, // Distance croissante (du plus proche au plus loin)
 }
 
 /// Gamme de prix
@@ -102,8 +101,6 @@ extension SortOptionExtension on SortOption {
         return 'Température';
       case SortOption.weatherCondition:
         return 'Conditions météo';
-      case SortOption.distance:
-        return 'Distance';
     }
   }
 
@@ -115,8 +112,6 @@ extension SortOptionExtension on SortOption {
         return Icons.thermostat;
       case SortOption.weatherCondition:
         return Icons.cloud;
-      case SortOption.distance:
-        return Icons.near_me;
     }
   }
 }

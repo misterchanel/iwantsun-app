@@ -165,11 +165,6 @@ class ResultFilterProvider extends ChangeNotifier {
               ? conditionScore(b.weatherForecast.forecasts.first.condition)
               : 0;
           return condB.compareTo(condA);
-
-        case SortOption.distance:
-          final distA = a.location.distanceFromCenter ?? double.infinity;
-          final distB = b.location.distanceFromCenter ?? double.infinity;
-          return distA.compareTo(distB);
       }
     });
 
