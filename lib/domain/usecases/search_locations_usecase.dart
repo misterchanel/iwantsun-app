@@ -164,12 +164,76 @@ class SearchLocationsUseCase {
     final resultsList = await Future.wait(futures);
 
     // Filtrer les résultats null (erreurs)
-    final results = resultsList.whereType<SearchResult>().toList();
+    var results = resultsList.whereType<SearchResult>().toList();
+
+    // Filtrer par conditions météo si l'utilisateur a spécifié des conditions
+    if (params.desiredConditions.isNotEmpty) {
+      results = results.where((result) {
+        return _matchesDesiredConditions(
+          result.weatherForecast,
+          params.desiredConditions,
+        );
+      }).toList();
+    }
 
     // Trier par score global décroissant
     results.sort((a, b) => b.overallScore.compareTo(a.overallScore));
 
     return results;
+  }
+
+  /// Vérifie si la condition météo dominante correspond aux conditions souhaitées
+  bool _matchesDesiredConditions(
+    WeatherForecast forecast,
+    List<String> desiredConditions,
+  ) {
+    if (forecast.forecasts.isEmpty) return false;
+
+    // Compter les occurrences de chaque condition
+    final conditionCounts = <String, int>{};
+    for (final weather in forecast.forecasts) {
+      final condition = weather.condition.toLowerCase();
+      conditionCounts[condition] = (conditionCounts[condition] ?? 0) + 1;
+    }
+
+    // Trouver la condition dominante
+    String dominantCondition = '';
+    int maxCount = 0;
+    for (final entry in conditionCounts.entries) {
+      if (entry.value > maxCount) {
+        maxCount = entry.value;
+        dominantCondition = entry.key;
+      }
+    }
+
+    // Vérifier si la condition dominante correspond à une des conditions souhaitées
+    for (final desired in desiredConditions) {
+      if (_conditionsMatch(dominantCondition, desired.toLowerCase())) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /// Vérifie si deux conditions météo sont compatibles
+  bool _conditionsMatch(String actual, String desired) {
+    // Correspondance exacte
+    if (actual == desired) return true;
+
+    // Correspondances flexibles
+    // "clear" correspond à "sunny" et vice versa
+    if ((actual == 'clear' || actual == 'sunny') &&
+        (desired == 'clear' || desired == 'sunny')) {
+      return true;
+    }
+
+    // "partly_cloudy" correspond aussi si l'utilisateur cherche du soleil
+    if (actual == 'partly_cloudy' && desired == 'clear') {
+      return true;
+    }
+
+    return false;
   }
 
   double _calculateWeatherScoreForParams(
@@ -384,6 +448,16 @@ class SearchLocationsUseCase {
     for (final future in futures) {
       final result = await future;
       if (result != null) {
+        // Filtrer par conditions météo si spécifiées
+        if (params.desiredConditions.isNotEmpty) {
+          if (!_matchesDesiredConditions(
+            result.weatherForecast,
+            params.desiredConditions,
+          )) {
+            continue; // Ignorer ce résultat
+          }
+        }
+
         results.add(result);
 
         // Trier et émettre le résultat immédiatement
