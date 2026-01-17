@@ -1,0 +1,106 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:provider/provider.dart';
+import 'package:iwantsun/core/router/app_router.dart';
+import 'package:iwantsun/core/config/env_config.dart';
+import 'package:iwantsun/core/services/cache_service.dart';
+import 'package:iwantsun/core/services/logger_service.dart';
+import 'package:iwantsun/core/services/favorites_service.dart';
+import 'package:iwantsun/core/services/search_history_service.dart';
+import 'package:iwantsun/core/services/offline_service.dart';
+import 'package:iwantsun/core/services/gamification_service.dart';
+import 'package:iwantsun/core/l10n/app_localizations.dart';
+import 'package:iwantsun/presentation/providers/provider_setup.dart';
+import 'package:iwantsun/presentation/providers/theme_provider.dart';
+import 'package:iwantsun/presentation/widgets/offline_banner.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialiser l'environnement
+  try {
+    await EnvConfig.load();
+  } catch (e) {
+    debugPrint('Warning: Failed to load .env file: $e');
+    debugPrint('The app will continue with default configuration.');
+  }
+
+  // Initialiser le logger
+  final logger = AppLogger();
+
+  // Initialiser le cache
+  try {
+    await CacheService().init();
+    logger.info('Cache service initialized successfully');
+  } catch (e) {
+    logger.error('Failed to initialize cache service', e);
+  }
+
+  // Initialiser le service des favoris
+  try {
+    await FavoritesService().init();
+    logger.info('Favorites service initialized successfully');
+  } catch (e) {
+    logger.error('Failed to initialize favorites service', e);
+  }
+
+  // Initialiser le service d'historique
+  try {
+    await SearchHistoryService().init();
+    logger.info('Search history service initialized successfully');
+  } catch (e) {
+    logger.error('Failed to initialize search history service', e);
+  }
+
+  // Initialiser le service offline
+  try {
+    await OfflineService().init();
+    logger.info('Offline service initialized successfully');
+  } catch (e) {
+    logger.error('Failed to initialize offline service', e);
+  }
+
+  // Initialiser le service de gamification
+  try {
+    await GamificationService().init();
+    logger.info('Gamification service initialized successfully');
+  } catch (e) {
+    logger.error('Failed to initialize gamification service', e);
+  }
+
+  runApp(const IWantSunApp());
+}
+
+class IWantSunApp extends StatelessWidget {
+  const IWantSunApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: ProviderSetup.getProviders(),
+      child: Consumer2<ThemeProvider, LocaleProvider>(
+        builder: (context, themeProvider, localeProvider, _) {
+          return MaterialApp.router(
+            title: 'IWantSun',
+            theme: themeProvider.theme,
+            debugShowCheckedModeBanner: false,
+            routerConfig: AppRouter.router,
+            locale: localeProvider.locale,
+            supportedLocales: LocaleProvider.supportedLocales,
+            localizationsDelegates: const [
+              AppLocalizations.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            builder: (context, child) {
+              return OfflineBanner(
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
