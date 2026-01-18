@@ -37,6 +37,7 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
   double _maxTemperature = 30.0;
   double _searchRadius = 100.0;
   List<String> _selectedConditions = ['clear', 'partly_cloudy'];
+  List<TimeSlot> _selectedTimeSlots = List.from(defaultTimeSlots); // Matin, après-midi, soirée par défaut
 
   bool _isSearchingLocation = false;
   double? _centerLatitude;
@@ -70,6 +71,9 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
       _centerLongitude = entry.params.centerLongitude;
       if (entry.params.desiredConditions.isNotEmpty) {
         _selectedConditions = entry.params.desiredConditions;
+      }
+      if (entry.params.timeSlots.isNotEmpty) {
+        _selectedTimeSlots = List.from(entry.params.timeSlots);
       }
     });
     // Unfocus pour fermer l'overlay
@@ -124,6 +128,19 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
         _selectedConditions.remove(condition);
       } else {
         _selectedConditions.add(condition);
+      }
+    });
+  }
+
+  void _toggleTimeSlot(TimeSlot slot) {
+    setState(() {
+      if (_selectedTimeSlots.contains(slot)) {
+        // Empêcher de tout désélectionner
+        if (_selectedTimeSlots.length > 1) {
+          _selectedTimeSlots.remove(slot);
+        }
+      } else {
+        _selectedTimeSlots.add(slot);
       }
     });
   }
@@ -440,6 +457,7 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
       desiredMinTemperature: _minTemperature,
       desiredMaxTemperature: _maxTemperature,
       desiredConditions: _selectedConditions,
+      timeSlots: _selectedTimeSlots,
     );
 
     // Lancer la recherche via le provider
@@ -756,6 +774,70 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
                       checkmarkColor: AppColors.primaryOrange,
                     );
                   }).toList(),
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Section Créneaux horaires
+              _buildSection(
+                title: 'Créneaux horaires',
+                icon: Icons.schedule,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Heures à considérer pour l\'analyse météo',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.darkGray.withOpacity(0.7),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: TimeSlot.values.map((slot) {
+                        final isSelected = _selectedTimeSlots.contains(slot);
+                        return FilterChip(
+                          selected: isSelected,
+                          label: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                slot.displayName,
+                                style: const TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              Text(
+                                slot.timeRange,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isSelected
+                                      ? AppColors.primaryOrange
+                                      : AppColors.darkGray.withOpacity(0.6),
+                                ),
+                              ),
+                            ],
+                          ),
+                          onSelected: (_) => _toggleTimeSlot(slot),
+                          selectedColor: AppColors.primaryOrange.withOpacity(0.2),
+                          checkmarkColor: AppColors.primaryOrange,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        );
+                      }).toList(),
+                    ),
+                    if (_selectedTimeSlots.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Sélectionnez au moins un créneau',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.errorRed,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
 

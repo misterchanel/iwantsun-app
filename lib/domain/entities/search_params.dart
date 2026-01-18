@@ -1,5 +1,63 @@
 import 'package:iwantsun/domain/entities/activity.dart';
 
+/// Créneaux horaires pour l'analyse météo
+enum TimeSlot {
+  morning,   // 7h-12h
+  afternoon, // 12h-18h
+  evening,   // 18h-22h
+  night,     // 22h-7h
+}
+
+/// Extension pour les propriétés des créneaux horaires
+extension TimeSlotExtension on TimeSlot {
+  String get displayName {
+    switch (this) {
+      case TimeSlot.morning:
+        return 'Matin';
+      case TimeSlot.afternoon:
+        return 'Après-midi';
+      case TimeSlot.evening:
+        return 'Soirée';
+      case TimeSlot.night:
+        return 'Nuit';
+    }
+  }
+
+  String get timeRange {
+    switch (this) {
+      case TimeSlot.morning:
+        return '7h-12h';
+      case TimeSlot.afternoon:
+        return '12h-18h';
+      case TimeSlot.evening:
+        return '18h-22h';
+      case TimeSlot.night:
+        return '22h-7h';
+    }
+  }
+
+  /// Retourne les heures (0-23) incluses dans ce créneau
+  List<int> get hours {
+    switch (this) {
+      case TimeSlot.morning:
+        return [7, 8, 9, 10, 11];
+      case TimeSlot.afternoon:
+        return [12, 13, 14, 15, 16, 17];
+      case TimeSlot.evening:
+        return [18, 19, 20, 21];
+      case TimeSlot.night:
+        return [22, 23, 0, 1, 2, 3, 4, 5, 6];
+    }
+  }
+}
+
+/// Créneaux par défaut (matin, après-midi, soirée - sans la nuit)
+const List<TimeSlot> defaultTimeSlots = [
+  TimeSlot.morning,
+  TimeSlot.afternoon,
+  TimeSlot.evening,
+];
+
 /// Paramètres de recherche simple
 class SearchParams {
   final double centerLatitude;
@@ -10,6 +68,7 @@ class SearchParams {
   final double? desiredMinTemperature;
   final double? desiredMaxTemperature;
   final List<String> desiredConditions; // clear, partly_cloudy, etc.
+  final List<TimeSlot> timeSlots; // Créneaux horaires à considérer
 
   const SearchParams({
     required this.centerLatitude,
@@ -20,6 +79,7 @@ class SearchParams {
     this.desiredMinTemperature,
     this.desiredMaxTemperature,
     this.desiredConditions = const [],
+    this.timeSlots = defaultTimeSlots,
   });
 
   /// Convertir en Map pour sauvegarde
@@ -33,8 +93,18 @@ class SearchParams {
       'desiredMinTemperature': desiredMinTemperature,
       'desiredMaxTemperature': desiredMaxTemperature,
       'desiredConditions': desiredConditions,
+      'timeSlots': timeSlots.map((t) => t.name).toList(),
       'type': 'simple',
     };
+  }
+
+  /// Retourne toutes les heures à considérer basées sur les créneaux sélectionnés
+  Set<int> get selectedHours {
+    final hours = <int>{};
+    for (final slot in timeSlots) {
+      hours.addAll(slot.hours);
+    }
+    return hours;
   }
 
   /// Créer depuis Map
@@ -57,6 +127,13 @@ class SearchParams {
               ?.map((e) => e as String)
               .toList() ??
           const [],
+      timeSlots: (json['timeSlots'] as List<dynamic>?)
+              ?.map((name) => TimeSlot.values.firstWhere(
+                    (t) => t.name == name,
+                    orElse: () => TimeSlot.morning,
+                  ))
+              .toList() ??
+          defaultTimeSlots,
     );
   }
 }
@@ -74,6 +151,7 @@ class AdvancedSearchParams extends SearchParams {
     super.desiredMinTemperature,
     super.desiredMaxTemperature,
     super.desiredConditions,
+    super.timeSlots,
     this.desiredActivities = const [],
   });
 
@@ -98,6 +176,13 @@ class AdvancedSearchParams extends SearchParams {
               ?.map((e) => e as String)
               .toList() ??
           const [],
+      timeSlots: (json['timeSlots'] as List<dynamic>?)
+              ?.map((name) => TimeSlot.values.firstWhere(
+                    (t) => t.name == name,
+                    orElse: () => TimeSlot.morning,
+                  ))
+              .toList() ??
+          defaultTimeSlots,
       desiredActivities: (json['desiredActivities'] as List<dynamic>?)
               ?.map((name) => ActivityType.values.firstWhere(
                     (type) => type.name == name,

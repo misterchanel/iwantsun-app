@@ -241,18 +241,83 @@ class SearchLocationsUseCase {
     return false;
   }
 
+  /// Filtre les données horaires selon les créneaux sélectionnés et calcule les moyennes
+  ({double avgTemp, double minTemp, double maxTemp, String condition}) _getFilteredWeatherData(
+    Weather weather,
+    Set<int> selectedHours,
+  ) {
+    // Si pas de données horaires ou tous les créneaux sélectionnés, utiliser les données journalières
+    if (weather.hourlyData.isEmpty || selectedHours.length >= 24) {
+      return (
+        avgTemp: weather.temperature,
+        minTemp: weather.minTemperature,
+        maxTemp: weather.maxTemperature,
+        condition: weather.condition,
+      );
+    }
+
+    // Filtrer les données horaires selon les créneaux sélectionnés
+    final filteredHourly = weather.hourlyData
+        .where((h) => selectedHours.contains(h.hour))
+        .toList();
+
+    if (filteredHourly.isEmpty) {
+      // Fallback aux données journalières si aucune donnée horaire ne correspond
+      return (
+        avgTemp: weather.temperature,
+        minTemp: weather.minTemperature,
+        maxTemp: weather.maxTemperature,
+        condition: weather.condition,
+      );
+    }
+
+    // Calculer les moyennes filtrées
+    final temps = filteredHourly.map((h) => h.temperature).toList();
+    final avgTemp = temps.reduce((a, b) => a + b) / temps.length;
+    final minTemp = temps.reduce((a, b) => a < b ? a : b);
+    final maxTemp = temps.reduce((a, b) => a > b ? a : b);
+
+    // Déterminer la condition dominante
+    final conditionCounts = <String, int>{};
+    for (final h in filteredHourly) {
+      conditionCounts[h.condition] = (conditionCounts[h.condition] ?? 0) + 1;
+    }
+    String dominantCondition = weather.condition;
+    int maxCount = 0;
+    for (final entry in conditionCounts.entries) {
+      if (entry.value > maxCount) {
+        maxCount = entry.value;
+        dominantCondition = entry.key;
+      }
+    }
+
+    return (
+      avgTemp: avgTemp,
+      minTemp: minTemp,
+      maxTemp: maxTemp,
+      condition: dominantCondition,
+    );
+  }
+
   double _calculateWeatherScoreForParams(
     WeatherForecast forecast,
     SearchParams params,
   ) {
     if (forecast.forecasts.isEmpty) return 0.0;
 
-    // Calculer la stabilité météo réelle basée sur toutes les prévisions
-    final allTemperatures = forecast.forecasts
-        .expand((w) => [w.minTemperature, w.maxTemperature])
+    // Récupérer les heures sélectionnées
+    final selectedHours = params.selectedHours;
+
+    // Calculer la stabilité météo basée sur les données filtrées
+    final filteredData = forecast.forecasts
+        .map((w) => _getFilteredWeatherData(w, selectedHours))
         .toList();
-    final allConditions = forecast.forecasts
-        .map((w) => w.condition)
+
+    final allTemperatures = filteredData
+        .expand((d) => [d.minTemp, d.maxTemp])
+        .toList();
+    final allConditions = filteredData
+        .map((d) => d.condition)
         .toList();
 
     final weatherStability = ScoreCalculator.calculateWeatherStability(
@@ -261,7 +326,8 @@ class SearchLocationsUseCase {
     );
 
     double totalScore = 0.0;
-    for (final weather in forecast.forecasts) {
+    for (int i = 0; i < forecast.forecasts.length; i++) {
+      final filtered = filteredData[i];
       double bestConditionScore = 0.0;
 
       // Si plusieurs conditions sont sélectionnées, prendre le meilleur score
@@ -270,11 +336,11 @@ class SearchLocationsUseCase {
           final score = ScoreCalculator.calculateWeatherScore(
             desiredMinTemp: params.desiredMinTemperature ?? 20.0,
             desiredMaxTemp: params.desiredMaxTemperature ?? 30.0,
-            actualMinTemp: weather.minTemperature,
-            actualMaxTemp: weather.maxTemperature,
+            actualMinTemp: filtered.minTemp,
+            actualMaxTemp: filtered.maxTemp,
             desiredCondition: desiredCondition,
-            actualCondition: weather.condition,
-            weatherStability: weatherStability, // Utiliser la stabilité calculée
+            actualCondition: filtered.condition,
+            weatherStability: weatherStability,
           );
           bestConditionScore = max(bestConditionScore, score);
         }
@@ -283,11 +349,11 @@ class SearchLocationsUseCase {
         bestConditionScore = ScoreCalculator.calculateWeatherScore(
           desiredMinTemp: params.desiredMinTemperature ?? 20.0,
           desiredMaxTemp: params.desiredMaxTemperature ?? 30.0,
-          actualMinTemp: weather.minTemperature,
-          actualMaxTemp: weather.maxTemperature,
+          actualMinTemp: filtered.minTemp,
+          actualMaxTemp: filtered.maxTemp,
           desiredCondition: 'clear',
-          actualCondition: weather.condition,
-          weatherStability: weatherStability, // Utiliser la stabilité calculée
+          actualCondition: filtered.condition,
+          weatherStability: weatherStability,
         );
       }
 

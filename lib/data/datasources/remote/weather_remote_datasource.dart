@@ -5,6 +5,7 @@ import 'package:iwantsun/core/services/cache_service.dart';
 import 'package:iwantsun/core/services/rate_limiter_service.dart';
 import 'package:iwantsun/core/services/logger_service.dart';
 import 'package:iwantsun/data/models/weather_model.dart';
+import 'package:iwantsun/domain/entities/weather.dart';
 
 /// Datasource pour récupérer les données météo depuis les APIs
 abstract class WeatherRemoteDataSource {
@@ -53,7 +54,7 @@ class WeatherRemoteDataSourceImpl implements WeatherRemoteDataSource {
       if (cached != null) {
         _logger.info('Weather forecast loaded from cache');
         return cached
-            .map((json) => WeatherModel.fromJson(json as Map<String, dynamic>))
+            .map((json) => WeatherModel.fromJsonSimple(json as Map<String, dynamic>))
             .toList();
       }
     } catch (e) {
@@ -81,6 +82,7 @@ class WeatherRemoteDataSourceImpl implements WeatherRemoteDataSource {
           'start_date': _formatDate(startDate),
           'end_date': _formatDate(endDate),
           'daily': 'temperature_2m_max,temperature_2m_min,weathercode',
+          'hourly': 'temperature_2m,weathercode', // Données horaires pour filtrage par créneau
           'timezone': 'auto',
         },
         options: Options(
@@ -130,6 +132,35 @@ class WeatherRemoteDataSourceImpl implements WeatherRemoteDataSource {
     final tempsMin = (daily['temperature_2m_min'] as List?) ?? [];
     final weatherCodes = (daily['weathercode'] as List?) ?? [];
 
+    // Parser les données horaires
+    final hourly = data['hourly'] ?? {};
+    final hourlyTimes = (hourly['time'] as List?) ?? [];
+    final hourlyTemps = (hourly['temperature_2m'] as List?) ?? [];
+    final hourlyWeatherCodes = (hourly['weathercode'] as List?) ?? [];
+
+    // Créer une map des données horaires par date (YYYY-MM-DD)
+    final hourlyByDate = <String, List<HourlyWeather>>{};
+    for (int i = 0; i < hourlyTimes.length; i++) {
+      try {
+        final hourlyDateTime = DateTime.parse(hourlyTimes[i].toString());
+        final dateKey = _formatDate(hourlyDateTime);
+        final hour = hourlyDateTime.hour;
+        final temp = hourlyTemps[i];
+        final code = hourlyWeatherCodes[i] ?? 0;
+
+        if (temp == null) continue;
+
+        hourlyByDate.putIfAbsent(dateKey, () => []);
+        hourlyByDate[dateKey]!.add(HourlyWeather(
+          hour: hour,
+          temperature: temp.toDouble(),
+          condition: _mapWeatherCode(code is int ? code : 0),
+        ));
+      } catch (e) {
+        continue;
+      }
+    }
+
     final List<WeatherModel> forecasts = [];
 
     for (int i = 0; i < times.length && i < tempsMax.length; i++) {
@@ -163,12 +194,16 @@ class WeatherRemoteDataSourceImpl implements WeatherRemoteDataSource {
         final tempAvg = (tempMax + tempMin) / 2;
         final weatherCode = weatherCodes[i] ?? 0;
 
+        // Récupérer les données horaires pour ce jour
+        final hourlyData = hourlyByDate[dateStr] ?? [];
+
         forecasts.add(WeatherModel(
           date: date,
           temperature: tempAvg,
           minTemperature: tempMin,
           maxTemperature: tempMax,
           condition: _mapWeatherCode(weatherCode),
+          hourlyData: hourlyData,
         ));
       } catch (e) {
         // Ignorer les erreurs de parsing individuelles

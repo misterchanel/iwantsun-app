@@ -11,6 +11,7 @@ class WeatherModel extends Weather {
     super.humidity,
     super.windSpeed,
     super.description,
+    super.hourlyData,
   });
 
   factory WeatherModel.fromJson(Map<String, dynamic> json) {
@@ -69,7 +70,27 @@ class WeatherModel extends Weather {
       'humidity': humidity,
       'windSpeed': windSpeed,
       'description': description,
+      'hourlyData': hourlyData.map((h) => h.toJson()).toList(),
     };
+  }
+
+  /// Créer depuis JSON avec données horaires (format Open-Meteo simplifié)
+  factory WeatherModel.fromJsonSimple(Map<String, dynamic> json) {
+    final hourlyList = (json['hourlyData'] as List<dynamic>?)
+        ?.map((h) => HourlyWeather.fromJson(h as Map<String, dynamic>))
+        .toList() ?? [];
+
+    return WeatherModel(
+      date: DateTime.parse(json['date'] as String),
+      temperature: (json['temperature'] as num).toDouble(),
+      minTemperature: (json['minTemperature'] as num).toDouble(),
+      maxTemperature: (json['maxTemperature'] as num).toDouble(),
+      condition: json['condition'] as String,
+      humidity: (json['humidity'] as num?)?.toDouble(),
+      windSpeed: (json['windSpeed'] as num?)?.toDouble(),
+      description: json['description'] as String?,
+      hourlyData: hourlyList,
+    );
   }
 
   Weather toEntity() {
@@ -82,6 +103,7 @@ class WeatherModel extends Weather {
       humidity: humidity,
       windSpeed: windSpeed,
       description: description,
+      hourlyData: hourlyData,
     );
   }
 }
