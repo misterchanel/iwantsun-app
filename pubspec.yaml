@@ -81,7 +81,7 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/icons/app_icon.png"
-  # Optionnel : icône adaptative avec fond séparé
-  # adaptive_icon_background: "#FFFFFF"
-  # adaptive_icon_foreground: "assets/icons/app_icon_foreground.png"
+  image_path: "assets/icons/app_icon_foreground.png"
+  # Icône adaptative avec fond transparent
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icons/app_icon_foreground.png"
