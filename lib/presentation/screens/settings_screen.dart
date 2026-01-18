@@ -67,60 +67,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                16,
-                16,
-                16 + MediaQuery.of(context).viewPadding.bottom,
+          : Container(
+              decoration: const BoxDecoration(
+                image: DecorationImage(
+                  image: AssetImage('assets/images/terrasse.png'),
+                  fit: BoxFit.cover,
+                  opacity: 0.15,
+                ),
               ),
-              children: [
-                _buildSection(
-                  title: 'Apparence',
-                  icon: Icons.palette,
-                  children: [
-                    _buildLanguageSelector(),
-                  ],
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  16 + MediaQuery.of(context).viewPadding.bottom,
                 ),
-                const SizedBox(height: 24),
-                _buildSection(
-                  title: 'Affichage',
-                  icon: Icons.display_settings,
-                  children: [
-                    _buildTemperatureUnitSwitch(),
-                    _buildDivider(),
-                    _buildTextScaleSlider(),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                _buildSection(
-                  title: 'Accessibilité',
-                  icon: Icons.accessibility,
-                  children: [
-                    _buildHighContrastSwitch(),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                _buildSection(
-                  title: 'Cache et données',
-                  icon: Icons.storage,
-                  children: [
-                    _buildCacheStats(),
-                    const SizedBox(height: 12),
-                    _buildClearCacheButton(),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                _buildSection(
-                  title: 'À propos',
-                  icon: Icons.info_outline,
-                  children: [
-                    _buildAboutInfo(),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                _buildResetButton(),
-              ],
+                children: [
+                  _buildSection(
+                    title: 'Internationalisation',
+                    icon: Icons.language,
+                    children: [
+                      _buildLanguageSelector(),
+                      _buildDivider(),
+                      _buildTemperatureUnitSwitch(),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  _buildSection(
+                    title: 'Affichage',
+                    icon: Icons.display_settings,
+                    children: [
+                      _buildTextScaleSlider(),
+                      _buildDivider(),
+                      _buildHighContrastSwitch(),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  _buildSection(
+                    title: 'Cache et données',
+                    icon: Icons.storage,
+                    children: [
+                      _buildCacheStats(),
+                      const SizedBox(height: 12),
+                      _buildClearCacheButton(),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  _buildSection(
+                    title: 'À propos',
+                    icon: Icons.info_outline,
+                    children: [
+                      _buildAboutInfo(),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  _buildResetButton(),
+                ],
+              ),
             ),
     );
   }
@@ -502,7 +505,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildResetButton() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: OutlinedButton.icon(
+      child: ElevatedButton.icon(
         onPressed: () async {
           final confirm = await showDialog<bool>(
             context: context,
@@ -545,9 +548,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
         },
         icon: const Icon(Icons.restore),
         label: const Text('Réinitialiser aux valeurs par défaut'),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.darkGray,
-          side: BorderSide(color: AppColors.lightGray),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primaryOrange,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
     );
