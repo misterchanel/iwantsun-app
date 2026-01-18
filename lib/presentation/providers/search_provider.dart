@@ -5,14 +5,15 @@ import 'package:iwantsun/core/services/network_service.dart';
 import 'package:iwantsun/core/services/search_history_service.dart';
 import 'package:iwantsun/core/services/gamification_service.dart';
 import 'package:iwantsun/core/services/analytics_service.dart';
+import 'package:iwantsun/core/services/firebase_search_service.dart';
 import 'package:iwantsun/domain/entities/search_params.dart';
 import 'package:iwantsun/domain/entities/search_result.dart';
-import 'package:iwantsun/domain/usecases/search_locations_usecase.dart';
 import 'package:iwantsun/presentation/providers/search_state.dart';
 
 /// Provider pour gérer l'état de la recherche
+/// Utilise Firebase Cloud Functions pour toutes les recherches
 class SearchProvider extends ChangeNotifier {
-  final SearchLocationsUseCase _searchLocationsUseCase;
+  final FirebaseSearchService _firebaseSearchService;
   final NetworkService _networkService;
   final SearchHistoryService _historyService;
   final GamificationService _gamificationService;
@@ -24,13 +25,13 @@ class SearchProvider extends ChangeNotifier {
   SearchParams? _currentParams; // Conserver les paramètres de recherche
 
   SearchProvider({
-    required SearchLocationsUseCase searchLocationsUseCase,
+    FirebaseSearchService? firebaseSearchService,
     NetworkService? networkService,
     SearchHistoryService? historyService,
     GamificationService? gamificationService,
     AnalyticsService? analyticsService,
     AppLogger? logger,
-  })  : _searchLocationsUseCase = searchLocationsUseCase,
+  })  : _firebaseSearchService = firebaseSearchService ?? FirebaseSearchService(),
         _networkService = networkService ?? NetworkService(),
         _historyService = historyService ?? SearchHistoryService(),
         _gamificationService = gamificationService ?? GamificationService(),
@@ -78,12 +79,13 @@ class SearchProvider extends ChangeNotifier {
       _updateState(SearchLoading.checkingWeather(locationsChecked: 40, totalLocations: 50));
       await Future.delayed(const Duration(milliseconds: 300));
 
-      // Étape 3: Recherche d'hôtels
+      // Étape 3: Appel à Firebase Cloud Function
       _updateState(SearchLoading.searchingHotels());
       await Future.delayed(const Duration(milliseconds: 300));
 
-      // Exécuter la recherche réelle
-      final results = await _searchLocationsUseCase.execute(params);
+      // Exécuter la recherche via Firebase Cloud Function
+      _logger.info('Calling Firebase Cloud Function for search...');
+      final results = await _firebaseSearchService.searchDestinations(params);
 
       // Simuler le nombre d'hôtels trouvés basé sur les résultats
       _updateState(SearchLoading.searchingHotels(hotelsFound: results.length * 5));

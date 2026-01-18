@@ -1,19 +1,10 @@
 import 'package:provider/provider.dart';
 import 'package:provider/single_child_widget.dart';
-import 'package:iwantsun/data/datasources/remote/activity_remote_datasource.dart';
 import 'package:iwantsun/data/datasources/remote/hotel_remote_datasource.dart';
-import 'package:iwantsun/data/datasources/remote/location_remote_datasource.dart';
-import 'package:iwantsun/data/datasources/remote/weather_remote_datasource.dart';
-import 'package:iwantsun/data/repositories/activity_repository_impl.dart';
 import 'package:iwantsun/data/repositories/hotel_repository_impl.dart';
-import 'package:iwantsun/data/repositories/location_repository_impl.dart';
-import 'package:iwantsun/data/repositories/weather_repository_impl.dart';
-import 'package:iwantsun/domain/repositories/activity_repository.dart';
 import 'package:iwantsun/domain/repositories/hotel_repository.dart';
-import 'package:iwantsun/domain/repositories/location_repository.dart';
-import 'package:iwantsun/domain/repositories/weather_repository.dart';
 import 'package:iwantsun/domain/usecases/get_hotels_usecase.dart';
-import 'package:iwantsun/domain/usecases/search_locations_usecase.dart';
+import 'package:iwantsun/core/services/firebase_search_service.dart';
 import 'package:iwantsun/presentation/providers/search_provider.dart';
 import 'package:iwantsun/presentation/providers/result_filter_provider.dart';
 import 'package:iwantsun/presentation/providers/favorites_provider.dart';
@@ -25,73 +16,35 @@ import 'package:iwantsun/core/services/analytics_service.dart';
 import 'package:iwantsun/core/services/user_profile_service.dart';
 
 /// Configuration de tous les providers de l'application
+/// NOTE: La recherche principale utilise Firebase Cloud Functions
+/// Les appels API directs (Open-Meteo, Overpass) sont désormais gérés côté serveur
 class ProviderSetup {
   /// Retourne la liste de tous les providers à injecter
   static List<SingleChildWidget> getProviders() {
     return [
-      // Data Sources
-      Provider<WeatherRemoteDataSource>(
-        create: (_) => WeatherRemoteDataSourceImpl(),
+      // Firebase Search Service (singleton)
+      Provider<FirebaseSearchService>(
+        create: (_) => FirebaseSearchService(),
       ),
-      Provider<LocationRemoteDataSource>(
-        create: (_) => LocationRemoteDataSourceImpl(),
-      ),
-      Provider<ActivityRemoteDataSource>(
-        create: (_) => ActivityRemoteDataSourceImpl(),
-      ),
+
+      // Hotel Data Source (pour l'affichage des hôtels après recherche)
       Provider<HotelRemoteDataSource>(
         create: (_) => HotelRemoteDataSourceImpl(),
       ),
 
-      // Repositories
-      ProxyProvider<WeatherRemoteDataSource, WeatherRepository>(
-        update: (_, dataSource, __) => WeatherRepositoryImpl(remoteDataSource: dataSource),
-      ),
-      ProxyProvider<LocationRemoteDataSource, LocationRepository>(
-        update: (_, dataSource, __) => LocationRepositoryImpl(remoteDataSource: dataSource),
-      ),
-      ProxyProvider<ActivityRemoteDataSource, ActivityRepository>(
-        update: (_, dataSource, __) => ActivityRepositoryImpl(remoteDataSource: dataSource),
-      ),
+      // Hotel Repository
       ProxyProvider<HotelRemoteDataSource, HotelRepository>(
         update: (_, dataSource, __) => HotelRepositoryImpl(remoteDataSource: dataSource),
       ),
 
-      // Use Cases
-      ProxyProvider3<LocationRepository, WeatherRepository, ActivityRepository,
-          SearchLocationsUseCase>(
-        update: (_, locationRepo, weatherRepo, activityRepo, __) =>
-            SearchLocationsUseCase(
-          locationRepository: locationRepo,
-          weatherRepository: weatherRepo,
-          activityRepository: activityRepo,
-        ),
-      ),
+      // Use Cases (hôtels uniquement, la recherche est via Firebase)
       ProxyProvider<HotelRepository, GetHotelsUseCase>(
         update: (_, hotelRepo, __) => GetHotelsUseCase(hotelRepository: hotelRepo),
       ),
 
-      // Providers (State Management)
-      ChangeNotifierProxyProvider<SearchLocationsUseCase, SearchProvider>(
-        create: (_) {
-          final locationRepo = LocationRepositoryImpl(
-            remoteDataSource: LocationRemoteDataSourceImpl(),
-          );
-          final weatherRepo = WeatherRepositoryImpl(
-            remoteDataSource: WeatherRemoteDataSourceImpl(),
-          );
-          final activityRepo = ActivityRepositoryImpl(
-            remoteDataSource: ActivityRemoteDataSourceImpl(),
-          );
-          final useCase = SearchLocationsUseCase(
-            locationRepository: locationRepo,
-            weatherRepository: weatherRepo,
-            activityRepository: activityRepo,
-          );
-          return SearchProvider(searchLocationsUseCase: useCase);
-        },
-        update: (_, useCase, previous) =>
-            previous ?? SearchProvider(searchLocationsUseCase: useCase),
+      // Search Provider (utilise Firebase Cloud Functions)
+      ChangeNotifierProvider<SearchProvider>(
+        create: (_) => SearchProvider(),
       ),
 
       // Result Filter Provider

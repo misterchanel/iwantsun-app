@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:iwantsun/firebase_options.dart';
 import 'package:iwantsun/core/router/app_router.dart';
 import 'package:iwantsun/core/config/env_config.dart';
@@ -24,6 +25,17 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Authentification anonyme pour sécuriser les appels Cloud Functions
+  try {
+    final auth = FirebaseAuth.instance;
+    if (auth.currentUser == null) {
+      await auth.signInAnonymously();
+      debugPrint('Firebase: Signed in anonymously');
+    }
+  } catch (e) {
+    debugPrint('Firebase Auth error: $e');
+  }
 
   // Configurer l'affichage système (barre de navigation Android)
   SystemChrome.setSystemUIOverlayStyle(
