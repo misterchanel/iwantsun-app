@@ -72,16 +72,36 @@ getNearbyCities(latitude, longitude, radiusKm)
 2. Requête Overpass API pour les `node/way/relation` avec `place=city|town|village`
 3. Calcul de la distance réelle (Haversine) pour chaque ville
 4. Filtrage des villes hors du rayon
-5. Tri par distance croissante
-6. Limitation adaptative (20-50 villes selon le rayon)
+5. **Tri par distance croissante (les plus proches en premier)**
+6. **Retour de TOUTES les villes triées (pas de limite précoce)**
 
-### Étape 2 : Récupération des prévisions météo
+**Optimisation :** Toutes les villes dans le rayon sont récupérées et triées. La sélection finale se fait après vérification météo.
 
-Pour chaque ville (en parallèle, max 50) :
+### Étape 2 : Récupération des prévisions météo (traitement par batch avec arrêt anticipé)
+
+**Stratégie optimisée :**
+
+1. **Traitement par batch** : Les villes sont traitées par groupes de 10 en parallèle
+2. **Utilisation du cache** : Chaque requête météo vérifie d'abord le cache (TTL 24h)
+   - Si présent et valide → utilisation du cache (pas d'appel API)
+   - Si expiré → suppression du cache, puis appel API
+   - Si absent → appel API puis mise en cache
+3. **Filtrage immédiat** : Dès réception des données météo, vérification de compatibilité
+   - Si incompatible avec les paramètres utilisateur → ville oubliée
+   - Si compatible → ajout aux résultats
+4. **Arrêt anticipé** : Dès que 20 villes compatibles sont trouvées, arrêt du traitement
 
 ```dart
-// Appel Open-Meteo API
-getWeatherForecast(latitude, longitude, startDate, endDate)
+// Traitement par batch avec arrêt anticipé
+for (batch in villes) {
+  futures = batch.map((ville) => getWeatherForecast(...))  // Cache automatique
+  results = await Future.wait(futures)
+  
+  // Filtrage immédiat des incompatibles
+  valides = results.filter(compatible)
+  
+  if (valides.length >= 20) break  // Arrêt anticipé
+}
 ```
 
 **Données récupérées :**
@@ -294,19 +314,32 @@ Le service maintient des statistiques :
 
 ## 7. Optimisations de performance
 
-1. **Parallélisation** : Les appels météo pour chaque ville sont exécutés en parallèle (`Future.wait`)
+1. **Traitement par batch avec arrêt anticipé** :
+   - Villes traitées par groupes de 10 en parallèle
+   - Arrêt dès que 20 résultats compatibles sont trouvés
+   - Réduit drastiquement les appels API inutiles
 
-2. **Limitation** : Maximum 50 villes traitées par recherche
+2. **Utilisation optimale du cache** :
+   - Vérification cache avant chaque appel API (TTL 24h)
+   - Suppression automatique des entrées expirées
+   - Clé de cache basée sur `ville/date/horaire`
+   - Réduction significative des appels API pour recherches similaires
 
-3. **Cache intelligent** :
-   - Coordonnées arrondies à 2 décimales pour partager le cache
-   - TTL de 24h pour les données de localisation
+3. **Tri précoce par distance** :
+   - Toutes les villes triées par distance depuis le centre
+   - Priorité aux villes proches (traitées en premier)
 
-4. **Filtrage précoce** :
+4. **Filtrage immédiat** :
+   - Villes incompatibles météo oubliées immédiatement
+   - Pas de calcul de score inutile pour villes incompatibles
    - Villes sans prévisions valides ignorées
    - Températures irréalistes (<-60°C ou >60°C) filtrées
 
-5. **Streaming** (optionnel) :
+5. **Garantie de résultats** :
+   - Traitement de toutes les villes disponibles si nécessaire
+   - Retour d'au moins 20 villes si disponibles et compatibles
+
+6. **Streaming** (optionnel) :
    - Version `executeStream()` pour affichage progressif des résultats
 
 ---

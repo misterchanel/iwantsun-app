@@ -333,23 +333,18 @@ out center;
 
         _logger.debug('Found ${locations.length} cities/villages within radius');
 
-        // Trier par distance
+        // Trier par distance (les plus proches en premier)
         locations.sort((a, b) {
           final distA = a.distanceFromCenter ?? double.infinity;
           final distB = b.distanceFromCenter ?? double.infinity;
           return distA.compareTo(distB);
         });
 
-        // Limite adaptative selon le rayon de recherche
-        // Rayon plus grand = plus de villes potentiellement pertinentes
-        final maxCities = radiusKm < 75
-            ? 20  // Petit rayon: 20 villes suffisent
-            : radiusKm < 150
-                ? 30  // Rayon moyen: 30 villes
-                : 50;  // Grand rayon: 50 villes pour plus de choix
-
-        _logger.debug('Limiting to $maxCities cities for radius ${radiusKm}km');
-        final result = locations.take(maxCities).toList();
+        // Retourner TOUTES les villes triées par distance (pas de limite précoce)
+        // Le filtrage et la limitation se feront plus tard dans le use case
+        // selon la compatibilité météo et l'arrêt anticipé à 20 résultats valides
+        _logger.debug('Returning all ${locations.length} cities sorted by distance');
+        final result = locations;
 
         // Mettre en cache les résultats pour 24h seulement si on a des villes
         if (result.isNotEmpty) {

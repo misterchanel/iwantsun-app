@@ -25,7 +25,7 @@ class SearchLocationsUseCase {
         _activityRepository = activityRepository;
 
   Future<List<SearchResult>> execute(SearchParams params) async {
-    // 1. Récupérer les villes proches (ou utiliser la localisation centrale si échec)
+    // 1. Récupérer TOUTES les villes dans le rayon (triées par distance depuis le centre)
     List<Location> locationsToSearch = [];
     try {
       final nearbyCities = await _locationRepository.getNearbyCities(
@@ -104,87 +104,121 @@ class SearchLocationsUseCase {
           );
         }
       }
+
+      // Trier par distance croissante (les plus proches en premier)
+      // Cela garantit qu'on traite d'abord les villes les plus proches
+      locationsToSearch.sort((a, b) {
+        final distA = a.distanceFromCenter ?? double.infinity;
+        final distB = b.distanceFromCenter ?? double.infinity;
+        return distA.compareTo(distB);
+      });
     }
 
-    // 2. Pour chaque ville, récupérer les prévisions météo EN PARALLÈLE
-    final locationsToProcess = locationsToSearch.take(50).toList();
+    // 2. Traiter les villes par batch avec arrêt anticipé dès qu'on a 20 résultats compatibles
+    // Le cache est géré automatiquement par le weather repository (TTL 24h)
+    const int targetResults = 20;
+    const int batchSize = 10; // Traiter 10 villes à la fois pour équilibrer performance et API calls
+    final results = <SearchResult>[];
 
-    // Créer une liste de futures pour tous les appels API
-    final futures = locationsToProcess.map((location) async {
-      try {
-        final weatherForecast = await _weatherRepository.getWeatherForecast(
-          latitude: location.latitude,
-          longitude: location.longitude,
-          startDate: params.startDate,
-          endDate: params.endDate,
-        );
-
-        // Ignorer les résultats sans prévisions valides
-        if (weatherForecast.forecasts.isEmpty) {
-          return null;
-        }
-
-        // Calculer le score météo avec les paramètres souhaités
-        final weatherScore = _calculateWeatherScoreForParams(
-          weatherForecast,
-          params,
-        );
-
-        double? activityScore;
-
-        // Si c'est une recherche avancée avec activités
-        if (params is AdvancedSearchParams &&
-            params.desiredActivities.isNotEmpty &&
-            _activityRepository != null) {
-          activityScore = await _calculateActivityScore(
-            location: location,
-            activityTypes: params.desiredActivities,
-            radiusKm: 20.0, // Rayon pour chercher les activités
-          );
-        }
-
-        // Score global
-        final overallScore = activityScore != null
-            ? (weatherScore * 0.7) + (activityScore * 0.3)
-            : weatherScore;
-
-        return SearchResult(
-          location: location,
-          weatherForecast: WeatherForecast(
-            locationId: weatherForecast.locationId,
-            forecasts: weatherForecast.forecasts,
-            averageTemperature: weatherForecast.averageTemperature,
-            weatherScore: weatherScore,
-          ),
-          activityScore: activityScore,
-          overallScore: overallScore,
-        );
-      } catch (e) {
-        // Retourner null en cas d'erreur pour cette ville
-        return null;
+    for (int i = 0; i < locationsToSearch.length; i += batchSize) {
+      // Si on a déjà assez de résultats, arrêter
+      if (results.length >= targetResults) {
+        break;
       }
-    }).toList();
 
-    // Exécuter tous les appels en parallèle
-    final resultsList = await Future.wait(futures);
+      // Prendre le prochain batch de villes
+      final batchEnd = (i + batchSize < locationsToSearch.length) 
+          ? i + batchSize 
+          : locationsToSearch.length;
+      final batch = locationsToSearch.sublist(i, batchEnd);
 
-    // Filtrer les résultats null (erreurs)
-    var results = resultsList.whereType<SearchResult>().toList();
+      // Traiter ce batch en parallèle
+      final batchFutures = batch.map((location) => _processLocation(location, params)).toList();
+      final batchResults = await Future.wait(batchFutures);
 
-    // Filtrer par conditions météo si l'utilisateur a spécifié des conditions
-    if (params.desiredConditions.isNotEmpty) {
-      results = results.where((result) {
-        return _matchesDesiredConditions(
-          result.weatherForecast,
-          params.desiredConditions,
-        );
-      }).toList();
+      // Filtrer les résultats null et vérifier la compatibilité météo immédiatement
+      for (final result in batchResults) {
+        if (result == null) continue; // Ignorer les erreurs
+
+        // Vérifier la compatibilité météo si des conditions sont spécifiées
+        if (params.desiredConditions.isNotEmpty) {
+          if (!_matchesDesiredConditions(result.weatherForecast, params.desiredConditions)) {
+            continue; // Ville incompatible, l'oublier de la liste
+          }
+        }
+
+        // Ville compatible : l'ajouter aux résultats
+        results.add(result);
+
+        // Arrêter si on a atteint le nombre cible
+        if (results.length >= targetResults) {
+          break;
+        }
+      }
     }
 
-    // Trier par score global décroissant
+    // Trier par score global décroissant (meilleurs scores en premier)
     results.sort((a, b) => b.overallScore.compareTo(a.overallScore));
 
+    // Retourner au minimum les résultats trouvés (peut être moins de 20 si pas assez de villes compatibles)
     return results;
+  }
+
+  /// Traite une ville individuelle : récupère météo, calcule score, et retourne le résultat ou null
+  Future<SearchResult?> _processLocation(Location location, SearchParams params) async {
+    try {
+      // Le cache est géré automatiquement par le repository (vérifie TTL 24h)
+      final weatherForecast = await _weatherRepository.getWeatherForecast(
+        latitude: location.latitude,
+        longitude: location.longitude,
+        startDate: params.startDate,
+        endDate: params.endDate,
+      );
+
+      // Ignorer les résultats sans prévisions valides
+      if (weatherForecast.forecasts.isEmpty) {
+        return null;
+      }
+
+      // Calculer le score météo avec les paramètres souhaités
+      final weatherScore = _calculateWeatherScoreForParams(
+        weatherForecast,
+        params,
+      );
+
+      double? activityScore;
+
+      // Si c'est une recherche avancée avec activités
+      if (params is AdvancedSearchParams &&
+          params.desiredActivities.isNotEmpty &&
+          _activityRepository != null) {
+        activityScore = await _calculateActivityScore(
+          location: location,
+          activityTypes: params.desiredActivities,
+          radiusKm: 20.0, // Rayon pour chercher les activités
+        );
+      }
+
+      // Score global
+      final overallScore = activityScore != null
+          ? (weatherScore * 0.7) + (activityScore * 0.3)
+          : weatherScore;
+
+      return SearchResult(
+        location: location,
+        weatherForecast: WeatherForecast(
+          locationId: weatherForecast.locationId,
+          forecasts: weatherForecast.forecasts,
+          averageTemperature: weatherForecast.averageTemperature,
+          weatherScore: weatherScore,
+        ),
+        activityScore: activityScore,
+        overallScore: overallScore,
+      );
+    } catch (e) {
+      // Retourner null en cas d'erreur pour cette ville
+      return null;
+    }
   }
 
   /// Vérifie si la condition météo dominante correspond aux conditions souhaitées
