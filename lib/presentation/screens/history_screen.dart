@@ -307,7 +307,6 @@ class _HistoryEntryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final timeFormat = DateFormat('HH:mm');
-    final dateFormat = DateFormat('dd/MM/yyyy');
 
     return Dismissible(
       key: Key(entry.id),
@@ -443,12 +442,9 @@ class _HistoryEntryCard extends StatelessWidget {
   }
 
   String _getDateRange() {
-    if (entry.params.startDate != null && entry.params.endDate != null) {
-      final start = DateFormat('dd/MM').format(entry.params.startDate!);
-      final end = DateFormat('dd/MM').format(entry.params.endDate!);
-      return '$start - $end';
-    }
-    return 'Flexibles';
+    final start = DateFormat('dd/MM').format(entry.params.startDate);
+    final end = DateFormat('dd/MM').format(entry.params.endDate);
+    return '$start - $end';
   }
 }
 

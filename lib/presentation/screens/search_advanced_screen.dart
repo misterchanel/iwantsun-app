@@ -101,11 +101,9 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
       _selectedConditions = List.from(entry.params.desiredConditions);
       _isLocationFromIp = false;
 
-      // Récupérer les dates si disponibles
-      if (entry.params.startDate != null && entry.params.endDate != null) {
-        _startDate = entry.params.startDate;
-        _endDate = entry.params.endDate;
-      }
+      // Récupérer les dates
+      _startDate = entry.params.startDate;
+      _endDate = entry.params.endDate;
 
       // Récupérer les activités si c'est une recherche avancée
       if (entry.params is AdvancedSearchParams) {

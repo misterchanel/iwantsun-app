@@ -49,9 +49,9 @@ class _ResultsMapViewState extends State<ResultsMapView> {
       return;
     }
 
-    // Créer les marqueurs
-    _markers = widget.results.map((result) {
-      return MapMarker.fromDestination(result);
+    // Créer les marqueurs avec rang
+    _markers = widget.results.asMap().entries.map((entry) {
+      return MapMarker.fromSearchResult(entry.value, rank: entry.key + 1);
     }).toList();
 
     // Calculer le centre de la carte (moyenne des positions)
@@ -277,7 +277,7 @@ class _ResultsMapViewState extends State<ResultsMapView> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        result.location.country,
+                        result.location.country ?? '',
                         style: const TextStyle(
                           fontSize: 16,
                           color: AppColors.mediumGray,
@@ -301,7 +301,7 @@ class _ResultsMapViewState extends State<ResultsMapView> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    '${result.matchScore}%',
+                    '${result.overallScore.toInt()}%',
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -325,7 +325,7 @@ class _ResultsMapViewState extends State<ResultsMapView> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Température moyenne: ${result.weatherScore.toStringAsFixed(1)}°C',
+                    'Température moyenne: ${result.weatherForecast.averageTemperature.toStringAsFixed(1)}°C',
                     style: const TextStyle(
                       fontSize: 16,
                       color: AppColors.darkGray,
@@ -348,7 +348,7 @@ class _ResultsMapViewState extends State<ResultsMapView> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Distance: ${result.distanceScore.toStringAsFixed(0)} km',
+                    'Distance: ${(result.location.distanceFromCenter ?? 0).toStringAsFixed(0)} km',
                     style: const TextStyle(
                       fontSize: 16,
                       color: AppColors.darkGray,

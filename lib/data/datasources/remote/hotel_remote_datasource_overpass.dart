@@ -29,7 +29,7 @@ class HotelRemoteDataSourceOverpass {
     required DateTime checkOut,
   }) async {
     // Créer une clé de cache unique
-    final cacheKey = '${ApiConstants.hotelCachePrefix}${latitude}_${longitude}';
+    final cacheKey = '${ApiConstants.hotelCachePrefix}${latitude}_$longitude';
 
     // Vérifier le cache d'abord
     try {
@@ -50,7 +50,7 @@ class HotelRemoteDataSourceOverpass {
 
     try {
       // Utiliser Overpass API pour rechercher les hôtels
-      final radiusMeters = 10000; // 10 km de rayon
+      const radiusMeters = 10000; // 10 km de rayon
       
       final query = '''
 [out:json][timeout:25];
@@ -131,9 +131,6 @@ out skel qt;
             latitude: lat,
             longitude: lon,
           );
-          
-          // Calculer la distance depuis le point central
-          final distance = _calculateDistance(latitude, longitude, lat, lon);
           
           hotels.add(HotelModel(
             id: element['id']?.toString() ?? '',

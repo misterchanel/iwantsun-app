@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:iwantsun/core/theme/app_colors.dart';
 
 /// Couleurs pour le thème sombre
 class DarkColors {

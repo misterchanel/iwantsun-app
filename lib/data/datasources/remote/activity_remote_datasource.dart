@@ -4,7 +4,6 @@ import 'package:iwantsun/core/network/dio_client.dart';
 import 'package:iwantsun/core/services/cache_service.dart';
 import 'package:iwantsun/core/services/rate_limiter_service.dart';
 import 'package:iwantsun/core/services/logger_service.dart';
-import 'package:iwantsun/core/config/env_config.dart';
 import 'package:iwantsun/data/models/activity_model.dart';
 import 'package:iwantsun/domain/entities/activity.dart';
 import 'dart:math' as math;

@@ -7,7 +7,6 @@ import 'package:iwantsun/core/services/analytics_service.dart';
 import 'package:iwantsun/domain/entities/search_result.dart';
 import 'package:iwantsun/presentation/providers/search_provider.dart';
 import 'package:iwantsun/presentation/providers/search_state.dart';
-import 'package:iwantsun/presentation/widgets/loading_indicator.dart';
 import 'package:iwantsun/presentation/widgets/enhanced_loading_indicator.dart';
 import 'package:iwantsun/presentation/widgets/enhanced_error_handler.dart';
 import 'package:iwantsun/presentation/widgets/result_filter_sheet.dart';

@@ -53,8 +53,8 @@ class LocationRemoteDataSourceImpl implements LocationRemoteDataSource {
 
   /// Vérifie si le résultat Nominatim est une ville/village
   bool _isSettlement(Map<String, dynamic> json) {
-    final type = json['type']?.toString()?.toLowerCase();
-    final classType = json['class']?.toString()?.toLowerCase();
+    final type = json['type']?.toString().toLowerCase();
+    final classType = json['class']?.toString().toLowerCase();
 
     // Types acceptés pour les villes/villages
     final validTypes = [

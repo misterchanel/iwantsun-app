@@ -1,5 +1,4 @@
 import 'package:iwantsun/data/models/hotel_model.dart';
-import 'package:iwantsun/core/services/logger_service.dart';
 import 'hotel_remote_datasource_overpass.dart';
 
 /// Datasource pour récupérer les hôtels via OpenStreetMap (GRATUIT, SANS CLÉ API)

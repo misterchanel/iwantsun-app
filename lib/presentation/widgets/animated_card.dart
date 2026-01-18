@@ -41,7 +41,6 @@ class _AnimatedCardState extends State<AnimatedCard>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
-  late Animation<double> _elevationAnimation;
 
   bool _isHovered = false;
   bool _isTapped = false;
@@ -57,14 +56,6 @@ class _AnimatedCardState extends State<AnimatedCard>
     _scaleAnimation = Tween<double>(
       begin: 1.0,
       end: 0.98,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: AppAnimations.standardCurve,
-    ));
-
-    _elevationAnimation = Tween<double>(
-      begin: 0.0,
-      end: 8.0,
     ).animate(CurvedAnimation(
       parent: _controller,
       curve: AppAnimations.standardCurve,

@@ -1,7 +1,5 @@
-import 'dart:convert';
 import 'package:iwantsun/core/services/cache_service.dart';
 import 'package:iwantsun/core/services/logger_service.dart';
-import 'package:iwantsun/domain/entities/search_result.dart';
 import 'package:iwantsun/domain/entities/search_params.dart';
 
 /// Service de cache offline pour les données de l'application
@@ -89,11 +87,11 @@ class OfflineCacheService {
 
   /// Générer une clé unique pour les paramètres de recherche
   String _generateSearchKey(SearchParams params) {
-    final key = '${params.centerLatitude?.toStringAsFixed(2)}_'
-        '${params.centerLongitude?.toStringAsFixed(2)}_'
-        '${params.searchRadiusKm}_'
-        '${params.startDate?.toIso8601String().substring(0, 10)}_'
-        '${params.endDate?.toIso8601String().substring(0, 10)}_'
+    final key = '${params.centerLatitude.toStringAsFixed(2)}_'
+        '${params.centerLongitude.toStringAsFixed(2)}_'
+        '${params.searchRadius}_'
+        '${params.startDate.toIso8601String().substring(0, 10)}_'
+        '${params.endDate.toIso8601String().substring(0, 10)}_'
         '${params.desiredMinTemperature?.toInt()}_'
         '${params.desiredMaxTemperature?.toInt()}';
     return key;
