@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "958048689469",
+    "project_id": "iwantsun-b6b46",
+    "storage_bucket": "iwantsun-b6b46.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:958048689469:android:7a41d62f75a1d23cfb7954",
+        "android_client_info": {
+          "package_name": "com.iwantsun.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAGUpg-fStP9tHIAX6m4VRmIr61HQt5hdQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

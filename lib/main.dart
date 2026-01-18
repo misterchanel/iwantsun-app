@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:iwantsun/firebase_options.dart';
 import 'package:iwantsun/core/router/app_router.dart';
 import 'package:iwantsun/core/config/env_config.dart';
 import 'package:iwantsun/core/services/cache_service.dart';
@@ -17,6 +19,11 @@ import 'package:iwantsun/presentation/widgets/offline_banner.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialiser Firebase
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   // Configurer l'affichage système (barre de navigation Android)
   SystemChrome.setSystemUIOverlayStyle(
