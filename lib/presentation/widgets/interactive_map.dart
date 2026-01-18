@@ -38,6 +38,7 @@ class InteractiveMap extends StatefulWidget {
 class _InteractiveMapState extends State<InteractiveMap> {
   late MapController _mapController;
   bool _hasFittedBounds = false;
+  LatLngBounds? _currentBounds; // Stocker les bounds pour le recentrage
 
   @override
   void initState() {
@@ -80,11 +81,12 @@ class _InteractiveMapState extends State<InteractiveMap> {
     );
   }
 
-  void _fitMapToBounds() {
-    if (!widget.fitBounds || _hasFittedBounds) return;
+  void _fitMapToBounds({bool force = false}) {
+    if (!widget.fitBounds || (_hasFittedBounds && !force)) return;
 
     final bounds = _calculateBounds();
     if (bounds != null) {
+      _currentBounds = bounds; // Stocker les bounds pour le recentrage
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _mapController.fitCamera(
@@ -110,16 +112,21 @@ class _InteractiveMapState extends State<InteractiveMap> {
   }
 
   void _centerMap() {
-    _mapController.move(widget.center, widget.zoom);
+    // Si des bounds ont été calculés, recentrer dessus
+    if (_currentBounds != null) {
+      _mapController.fitCamera(
+        CameraFit.bounds(
+          bounds: _currentBounds!,
+          padding: widget.boundsPadding,
+        ),
+      );
+    } else {
+      _mapController.move(widget.center, widget.zoom);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Fit bounds après le premier build si demandé
-    if (widget.fitBounds && !_hasFittedBounds) {
-      _fitMapToBounds();
-    }
-
     final mapWidget = Stack(
       children: [
         FlutterMap(
@@ -135,9 +142,14 @@ class _InteractiveMapState extends State<InteractiveMap> {
                   : InteractiveFlag.none,
             ),
             onMapReady: () {
-              // Fit bounds quand la carte est prête
+              // Fit bounds quand la carte est prête avec un léger délai
+              // pour s'assurer que les tuiles sont chargées
               if (widget.fitBounds && !_hasFittedBounds) {
-                _fitMapToBounds();
+                Future.delayed(const Duration(milliseconds: 100), () {
+                  if (mounted) {
+                    _fitMapToBounds();
+                  }
+                });
               }
             },
           ),
@@ -148,6 +160,10 @@ class _InteractiveMapState extends State<InteractiveMap> {
                 userAgentPackageName: 'com.iwantsun.app',
                 maxZoom: 19,
                 tileProvider: NetworkTileProvider(),
+                // Rendu instantané pour éviter le flou
+                tileDisplay: const TileDisplay.instantaneous(),
+                // Forcer le rafraîchissement des tuiles
+                keepBuffer: 5,
               ),
 
               // Marqueurs
