@@ -15,6 +15,8 @@ class InteractiveMap extends StatefulWidget {
   final double? height;
   final bool showControls;
   final bool enableInteraction;
+  final bool fitBounds; // Si true, zoom automatique pour afficher tous les marqueurs
+  final EdgeInsets boundsPadding; // Padding autour des bounds
 
   const InteractiveMap({
     super.key,
@@ -25,6 +27,8 @@ class InteractiveMap extends StatefulWidget {
     this.height,
     this.showControls = true,
     this.enableInteraction = true,
+    this.fitBounds = false,
+    this.boundsPadding = const EdgeInsets.all(50),
   });
 
   @override
@@ -33,6 +37,7 @@ class InteractiveMap extends StatefulWidget {
 
 class _InteractiveMapState extends State<InteractiveMap> {
   late MapController _mapController;
+  bool _hasFittedBounds = false;
 
   @override
   void initState() {
@@ -44,6 +49,54 @@ class _InteractiveMapState extends State<InteractiveMap> {
   void dispose() {
     _mapController.dispose();
     super.dispose();
+  }
+
+  /// Calcule les bounds pour afficher tous les marqueurs
+  LatLngBounds? _calculateBounds() {
+    if (widget.markers.isEmpty) return null;
+    if (widget.markers.length == 1) return null; // Un seul marqueur, pas besoin de bounds
+
+    double minLat = double.infinity;
+    double maxLat = -double.infinity;
+    double minLng = double.infinity;
+    double maxLng = -double.infinity;
+
+    for (final marker in widget.markers) {
+      final lat = marker.position.latitude;
+      final lng = marker.position.longitude;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+    }
+
+    // Ajouter un peu de marge
+    final latMargin = (maxLat - minLat) * 0.1;
+    final lngMargin = (maxLng - minLng) * 0.1;
+
+    return LatLngBounds(
+      LatLng(minLat - latMargin, minLng - lngMargin),
+      LatLng(maxLat + latMargin, maxLng + lngMargin),
+    );
+  }
+
+  void _fitMapToBounds() {
+    if (!widget.fitBounds || _hasFittedBounds) return;
+
+    final bounds = _calculateBounds();
+    if (bounds != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _mapController.fitCamera(
+            CameraFit.bounds(
+              bounds: bounds,
+              padding: widget.boundsPadding,
+            ),
+          );
+          _hasFittedBounds = true;
+        }
+      });
+    }
   }
 
   void _zoomIn() {
@@ -62,23 +115,32 @@ class _InteractiveMapState extends State<InteractiveMap> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: widget.height ?? 400,
-      child: Stack(
-        children: [
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: widget.center,
-              initialZoom: widget.zoom,
-              minZoom: 3,
-              maxZoom: 18,
-              interactionOptions: InteractionOptions(
-                flags: widget.enableInteraction
-                    ? InteractiveFlag.all
-                    : InteractiveFlag.none,
-              ),
+    // Fit bounds après le premier build si demandé
+    if (widget.fitBounds && !_hasFittedBounds) {
+      _fitMapToBounds();
+    }
+
+    final mapWidget = Stack(
+      children: [
+        FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: widget.center,
+            initialZoom: widget.zoom,
+            minZoom: 3,
+            maxZoom: 18,
+            interactionOptions: InteractionOptions(
+              flags: widget.enableInteraction
+                  ? InteractiveFlag.all
+                  : InteractiveFlag.none,
             ),
+            onMapReady: () {
+              // Fit bounds quand la carte est prête
+              if (widget.fitBounds && !_hasFittedBounds) {
+                _fitMapToBounds();
+              }
+            },
+          ),
             children: [
               // Tuiles OpenStreetMap
               TileLayer(
@@ -144,8 +206,16 @@ class _InteractiveMapState extends State<InteractiveMap> {
               ),
             ),
         ],
-      ),
-    );
+      );
+
+    // Si height est spécifié, utiliser SizedBox, sinon retourner directement le widget
+    if (widget.height != null) {
+      return SizedBox(
+        height: widget.height,
+        child: mapWidget,
+      );
+    }
+    return mapWidget;
   }
 
   Widget _buildControlButton({
@@ -185,7 +255,10 @@ class _InteractiveMapState extends State<InteractiveMap> {
 
     switch (marker.type) {
       case MarkerType.destination:
-        markerColor = AppColors.primaryOrange;
+        // Si top 10, utiliser vert, sinon orange
+        markerColor = marker.isTopTen
+            ? const Color(0xFF4CAF50) // Vert pour top 10
+            : AppColors.primaryOrange;
         markerIcon = Icons.location_on;
         break;
       case MarkerType.hotel:
@@ -200,6 +273,39 @@ class _InteractiveMapState extends State<InteractiveMap> {
         markerColor = const Color(0xFFF44336);
         markerIcon = Icons.my_location;
         break;
+    }
+
+    // Si un rang est défini, afficher le numéro au lieu de l'icône
+    if (marker.rank != null) {
+      return Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: markerColor,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: Colors.white,
+            width: 2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: markerColor.withOpacity(0.4),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            '${marker.rank}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      );
     }
 
     return Container(
@@ -239,6 +345,8 @@ class MapMarker {
   final String title;
   final String? subtitle;
   final dynamic data; // Données associées (DestinationResult, Hotel, Activity, etc.)
+  final int? rank; // Rang pour affichage numéroté (1-based)
+  final bool isTopTen; // Si dans les 10 premiers (couleur verte)
 
   const MapMarker({
     required this.id,
@@ -247,9 +355,11 @@ class MapMarker {
     required this.title,
     this.subtitle,
     this.data,
+    this.rank,
+    this.isTopTen = false,
   });
 
-  factory MapMarker.fromSearchResult(SearchResult result) {
+  factory MapMarker.fromSearchResult(SearchResult result, {int? rank}) {
     return MapMarker(
       id: 'dest_${result.location.latitude}_${result.location.longitude}',
       position: LatLng(result.location.latitude, result.location.longitude),
@@ -257,6 +367,8 @@ class MapMarker {
       title: result.location.name,
       subtitle: '${result.overallScore.toInt()}% de correspondance',
       data: result,
+      rank: rank,
+      isTopTen: rank != null && rank <= 10,
     );
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:iwantsun/core/router/app_router.dart';
@@ -11,11 +12,26 @@ import 'package:iwantsun/core/services/offline_service.dart';
 import 'package:iwantsun/core/services/gamification_service.dart';
 import 'package:iwantsun/core/l10n/app_localizations.dart';
 import 'package:iwantsun/presentation/providers/provider_setup.dart';
-import 'package:iwantsun/presentation/providers/theme_provider.dart';
+import 'package:iwantsun/core/theme/app_theme.dart';
 import 'package:iwantsun/presentation/widgets/offline_banner.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Configurer l'affichage système (barre de navigation Android)
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: Colors.white,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ),
+  );
+
+  // S'assurer que l'app respecte les zones sécurisées
+  SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.edgeToEdge,
+  );
 
   // Initialiser l'environnement
   try {
@@ -78,11 +94,11 @@ class IWantSunApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: ProviderSetup.getProviders(),
-      child: Consumer2<ThemeProvider, LocaleProvider>(
-        builder: (context, themeProvider, localeProvider, _) {
+      child: Consumer<LocaleProvider>(
+        builder: (context, localeProvider, _) {
           return MaterialApp.router(
             title: 'IWantSun',
-            theme: themeProvider.theme,
+            theme: AppTheme.lightTheme,
             debugShowCheckedModeBanner: false,
             routerConfig: AppRouter.router,
             locale: localeProvider.locale,

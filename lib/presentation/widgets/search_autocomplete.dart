@@ -9,6 +9,7 @@ class SearchAutocomplete extends StatefulWidget {
   final Function(SearchHistoryEntry) onHistorySelected;
   final String hintText;
   final Function(String)? onChanged;
+  final VoidCallback? onFieldSubmitted;
   final bool isLoading;
 
   const SearchAutocomplete({
@@ -18,6 +19,7 @@ class SearchAutocomplete extends StatefulWidget {
     required this.onHistorySelected,
     this.hintText = 'Rechercher une ville...',
     this.onChanged,
+    this.onFieldSubmitted,
     this.isLoading = false,
   });
 
@@ -295,12 +297,17 @@ class _SearchAutocompleteState extends State<SearchAutocomplete> {
       child: TextField(
         controller: widget.controller,
         focusNode: widget.focusNode,
+        textInputAction: TextInputAction.search,
         style: const TextStyle(
           fontSize: 16,
           color: AppColors.textDark,
         ),
         onChanged: (value) {
           widget.onChanged?.call(value);
+        },
+        onSubmitted: (_) {
+          _removeOverlay();
+          widget.onFieldSubmitted?.call();
         },
         decoration: InputDecoration(
           hintText: widget.hintText,

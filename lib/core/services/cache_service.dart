@@ -13,6 +13,8 @@ class CacheService {
   static const String _locationCacheBox = 'location_cache';
   static const String _hotelCacheBox = 'hotel_cache';
   static const String _activityCacheBox = 'activity_cache';
+  static const String _userPreferencesBox = 'user_preferences';
+  static const String _favoritesBox = 'favorites';
 
   // Statistiques de cache
   int _hits = 0;
@@ -35,6 +37,8 @@ class CacheService {
       await Hive.openBox(_locationCacheBox);
       await Hive.openBox(_hotelCacheBox);
       await Hive.openBox(_activityCacheBox);
+      await Hive.openBox(_userPreferencesBox);
+      await Hive.openBox(_favoritesBox);
 
       _logger.info('Cache service initialized');
     } catch (e, stackTrace) {

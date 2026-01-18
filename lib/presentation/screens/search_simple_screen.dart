@@ -42,7 +42,6 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
   double? _centerLatitude;
   double? _centerLongitude;
   String? _locationError;
-  bool _isLocationFromIp = false; // Badge IP pour position approximative
 
   final List<Map<String, dynamic>> _availableConditions = [
     {'value': 'clear', 'label': 'Ensoleillé', 'icon': Icons.wb_sunny},
@@ -69,7 +68,6 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
       _endDate = entry.params.endDate;
       _centerLatitude = entry.params.centerLatitude;
       _centerLongitude = entry.params.centerLongitude;
-      _isLocationFromIp = false; // Recherche historique = pas IP
       if (entry.params.desiredConditions.isNotEmpty) {
         _selectedConditions = entry.params.desiredConditions;
       }
@@ -180,7 +178,6 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
           _centerLongitude = location.longitude;
           _locationController.text = location.name;
           _isSearchingLocation = false;
-          _isLocationFromIp = locationResult.source == LocationSource.ip;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -190,13 +187,17 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
+
+        // Pré-remplir la température si les dates sont déjà définies
+        if (_startDate != null && _endDate != null) {
+          _prefillTemperature();
+        }
       } else {
         setState(() {
           _centerLatitude = locationResult.latitude;
           _centerLongitude = locationResult.longitude;
           _locationController.text = '${locationResult.latitude.toStringAsFixed(4)}, ${locationResult.longitude.toStringAsFixed(4)}';
           _isSearchingLocation = false;
-          _isLocationFromIp = locationResult.source == LocationSource.ip;
         });
 
         // Pré-remplir la température si les dates sont déjà définies
@@ -265,7 +266,6 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
       setState(() {
         _centerLatitude = selectedLocation.latitude;
         _centerLongitude = selectedLocation.longitude;
-        _isLocationFromIp = false; // Recherche manuelle = pas IP
       });
 
       if (!mounted) return;
@@ -292,7 +292,7 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
     }
   }
 
-  /// Pré-remplit la température basée sur la météo du lieu et de la période
+  /// Pré-remplit la température basée sur la météo des villes dans le rayon et la période
   Future<void> _prefillTemperature() async {
     // Vérifier que toutes les données nécessaires sont disponibles
     if (_centerLatitude == null || _centerLongitude == null ||
@@ -301,29 +301,82 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
     }
 
     try {
+      final locationRepo = LocationRepositoryImpl(
+        remoteDataSource: LocationRemoteDataSourceImpl(),
+      );
       final weatherRepo = WeatherRepositoryImpl(
         remoteDataSource: WeatherRemoteDataSourceImpl(),
       );
 
-      final forecast = await weatherRepo.getWeatherForecast(
-        latitude: _centerLatitude!,
-        longitude: _centerLongitude!,
-        startDate: _startDate!,
-        endDate: _endDate!,
-      );
+      // Récupérer les villes dans le rayon de recherche
+      List<Location> locationsToCheck = [];
+      try {
+        final nearbyCities = await locationRepo.getNearbyCities(
+          latitude: _centerLatitude!,
+          longitude: _centerLongitude!,
+          radiusKm: _searchRadius,
+        );
+        // Limiter à 10 villes pour les performances
+        locationsToCheck = nearbyCities.take(10).toList();
+      } catch (e) {
+        // Si échec, utiliser uniquement le point central
+        AppLogger().warning('Impossible de récupérer les villes proches, utilisation du point central', e);
+      }
+
+      // Si aucune ville trouvée, utiliser le point central
+      if (locationsToCheck.isEmpty) {
+        locationsToCheck = [
+          Location(
+            id: 'center',
+            name: 'Centre',
+            latitude: _centerLatitude!,
+            longitude: _centerLongitude!,
+          ),
+        ];
+      }
+
+      // Récupérer les prévisions météo pour chaque ville
+      double globalMinTemp = double.infinity;
+      double globalMaxTemp = double.negativeInfinity;
+      int successCount = 0;
+
+      for (final location in locationsToCheck) {
+        try {
+          final forecast = await weatherRepo.getWeatherForecast(
+            latitude: location.latitude,
+            longitude: location.longitude,
+            startDate: _startDate!,
+            endDate: _endDate!,
+          );
+
+          // Récupérer les min/max de toutes les prévisions
+          for (final weather in forecast.forecasts) {
+            if (weather.minTemperature < globalMinTemp) {
+              globalMinTemp = weather.minTemperature;
+            }
+            if (weather.maxTemperature > globalMaxTemp) {
+              globalMaxTemp = weather.maxTemperature;
+            }
+          }
+          successCount++;
+        } catch (e) {
+          // Ignorer les erreurs pour une ville individuelle
+          continue;
+        }
+      }
 
       if (!mounted) return;
 
-      // Calculer la température moyenne
-      final avgTemp = forecast.averageTemperature;
+      // Si on a réussi à obtenir au moins une prévision
+      if (successCount > 0 && globalMinTemp != double.infinity && globalMaxTemp != double.negativeInfinity) {
+        // Arrondir et ajouter une marge de 2 degrés
+        setState(() {
+          _minTemperature = (globalMinTemp - 2).clamp(0.0, 40.0);
+          _maxTemperature = (globalMaxTemp + 2).clamp(0.0, 40.0);
+        });
 
-      // Pré-remplir avec ±10 degrés autour de la moyenne
-      setState(() {
-        _minTemperature = (avgTemp - 10).clamp(0.0, 40.0);
-        _maxTemperature = (avgTemp + 10).clamp(0.0, 40.0);
-      });
-
-      AppLogger().info('Température pré-remplie: min=${_minTemperature.toStringAsFixed(1)}, max=${_maxTemperature.toStringAsFixed(1)} (moyenne: ${avgTemp.toStringAsFixed(1)})');
+        AppLogger().info('Température pré-remplie (${successCount} villes): min=${_minTemperature.toStringAsFixed(1)}, max=${_maxTemperature.toStringAsFixed(1)}');
+      }
     } catch (e) {
       // En cas d'erreur, ne rien faire (garder les valeurs par défaut)
       AppLogger().warning('Impossible de pré-remplir la température', e);
@@ -448,7 +501,12 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
           child: Form(
             key: _formKey,
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20.0),
+              padding: EdgeInsets.fromLTRB(
+                20.0,
+                20.0,
+                20.0,
+                20.0 + MediaQuery.of(context).viewPadding.bottom,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -464,6 +522,8 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
                       focusNode: _locationFocusNode,
                       hintText: 'Ex: Paris, France',
                       onHistorySelected: _onHistorySelected,
+                      onFieldSubmitted: _searchLocation,
+                      isLoading: _isSearchingLocation,
                     ),
                     // Indicateur de chargement si recherche en cours
                     if (_isSearchingLocation)
@@ -484,51 +544,6 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
                     if (_locationError != null) ...[
                       const SizedBox(height: 8),
                       InlineError(message: _locationError!),
-                    ],
-                    if (_centerLatitude != null && _centerLongitude != null) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _isLocationFromIp ? Colors.orange.shade50 : Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _isLocationFromIp ? Colors.orange.shade300 : Colors.green.shade200,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.check_circle,
-                              color: _isLocationFromIp ? Colors.orange.shade700 : Colors.green.shade700,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                _isLocationFromIp ? 'Position approximative' : 'Localisation trouvée',
-                                style: const TextStyle(fontSize: 13),
-                              ),
-                            ),
-                            if (_isLocationFromIp)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text(
-                                  'IP',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
                     ],
                     const SizedBox(height: 12),
                     SizedBox(
@@ -784,6 +799,13 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
                         setState(() {
                           _searchRadius = value;
                         });
+                      },
+                      onChangeEnd: (value) {
+                        // Recalculer les températures si localisation et dates sont définies
+                        if (_centerLatitude != null && _centerLongitude != null &&
+                            _startDate != null && _endDate != null) {
+                          _prefillTemperature();
+                        }
                       },
                     ),
                   ],

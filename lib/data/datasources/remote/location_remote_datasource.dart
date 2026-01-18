@@ -285,21 +285,21 @@ out center;
       if (response.statusCode == 200) {
         final data = response.data;
         final elements = (data['elements'] as List?) ?? [];
-        
+
         _logger.debug('Overpass API returned ${elements.length} elements');
-        
+
         final locations = <LocationModel>[];
         for (var element in elements) {
           final tags = element['tags'] as Map<String, dynamic>?;
           if (tags == null) continue;
-          
+
           // Vérifier que c'est bien une ville/village (strict)
           final place = tags['place']?.toString();
           if (place != 'city' && place != 'town' && place != 'village') continue;
-          
+
           final name = tags['name']?.toString() ?? tags['name:fr']?.toString() ?? '';
           if (name.isEmpty) continue;
-          
+
           // Récupérer les coordonnées
           double? lat, lon;
           if (element['type'] == 'node') {
@@ -312,15 +312,15 @@ out center;
               lon = center['lon']?.toDouble();
             }
           }
-          
+
           if (lat == null || lon == null) continue;
-          
+
           // Calculer la distance depuis le centre
           final distance = _calculateDistance(latitude, longitude, lat, lon);
-          
+
           // Filtrer pour ne garder que les villes dans le rayon
           if (distance > radiusKm) continue;
-          
+
           locations.add(LocationModel(
             id: element['id']?.toString() ?? '',
             name: name,
@@ -330,7 +330,7 @@ out center;
             distanceFromCenter: distance,
           ));
         }
-        
+
         _logger.debug('Found ${locations.length} cities/villages within radius');
 
         // Trier par distance
@@ -351,18 +351,23 @@ out center;
         _logger.debug('Limiting to $maxCities cities for radius ${radiusKm}km');
         final result = locations.take(maxCities).toList();
 
-        // Mettre en cache les résultats pour 24h
-        final cacheData = result.map((loc) => loc.toJson()).toList();
-        await _cache.put(cacheKey, cacheData, CacheService.locationCacheBox);
-        _logger.debug('Cached Overpass API results for 24h');
+        // Mettre en cache les résultats pour 24h seulement si on a des villes
+        if (result.isNotEmpty) {
+          final cacheData = result.map((loc) => loc.toJson()).toList();
+          await _cache.put(cacheKey, cacheData, CacheService.locationCacheBox);
+          _logger.debug('Cached Overpass API results for 24h');
+        }
 
         return result;
       }
-      return [];
+
+      _logger.warning('Overpass API returned status ${response.statusCode}');
+      throw Exception('Erreur Overpass API: code ${response.statusCode}');
     } catch (e, stackTrace) {
-      _logger.warning('Error fetching nearby cities from Overpass API', e);
+      _logger.error('Error fetching nearby cities from Overpass API', e);
       _logger.debug('Stack trace', stackTrace);
-      return [];
+      // Lever l'exception pour que le code appelant sache qu'il y a eu un problème
+      rethrow;
     }
   }
 

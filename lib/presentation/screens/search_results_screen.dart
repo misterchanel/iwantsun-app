@@ -67,7 +67,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            const Text('Résultats de recherche'),
+            const Text('Résultats'),
           ],
         ),
         backgroundColor: AppColors.primaryOrange,
@@ -323,7 +323,12 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         // Liste des résultats paginés
         Expanded(
           child: ListView.builder(
-            padding: const EdgeInsets.all(12),
+            padding: EdgeInsets.fromLTRB(
+              12,
+              12,
+              12,
+              12 + MediaQuery.of(context).viewPadding.bottom,
+            ),
             itemCount: displayCount + (hasMore ? 1 : 0),
             itemBuilder: (context, index) {
               // Bouton "Charger plus" en fin de liste
@@ -374,94 +379,159 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     avgLat /= results.length;
     avgLng /= results.length;
 
-    // Créer les marqueurs
-    final markers = results.map((result) {
-      return MapMarker.fromSearchResult(result);
-    }).toList();
+    // Créer les marqueurs avec rang (1-based)
+    final markers = <MapMarker>[];
+    for (int i = 0; i < results.length; i++) {
+      markers.add(MapMarker.fromSearchResult(results[i], rank: i + 1));
+    }
 
-    return Stack(
-      children: [
-        // Carte interactive
-        InteractiveMap(
-          center: LatLng(avgLat, avgLng),
-          zoom: 6,
-          markers: markers,
-          onMarkerTap: (marker) {
-            final result = marker.data as SearchResult?;
-            if (result != null) {
-              setState(() {
-                _selectedResult = result;
-              });
-            }
-          },
-        ),
+    return SizedBox.expand(
+      child: Stack(
+        children: [
+          // Carte interactive - plein écran avec fitBounds
+          InteractiveMap(
+            center: LatLng(avgLat, avgLng),
+            zoom: 6,
+            markers: markers,
+            fitBounds: true, // Zoom automatique pour afficher toutes les villes
+            boundsPadding: EdgeInsets.fromLTRB(
+              50,
+              80, // Plus de marge en haut pour le badge de compteur
+              50,
+              _selectedResult != null ? 250 : 50, // Plus de marge en bas si carte sélectionnée
+            ),
+            onMarkerTap: (marker) {
+              final result = marker.data as SearchResult?;
+              if (result != null) {
+                setState(() {
+                  _selectedResult = result;
+                });
+              }
+            },
+          ),
 
-        // Carte de destination sélectionnée en bas
-        if (_selectedResult != null)
+          // Carte de destination sélectionnée en bas (sans bouton favori)
+          if (_selectedResult != null)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16 + MediaQuery.of(context).viewPadding.bottom,
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedResult = null;
+                  });
+                },
+                child: DestinationResultCard(
+                  result: _selectedResult!,
+                  showFavorite: false, // Pas de favori sur la carte (superposé avec X)
+                ),
+              ),
+            ),
+
+          // Bouton pour fermer la sélection
+          if (_selectedResult != null)
+            Positioned(
+              right: 24,
+              bottom: 200 + MediaQuery.of(context).viewPadding.bottom,
+              child: FloatingActionButton.small(
+                onPressed: () {
+                  setState(() {
+                    _selectedResult = null;
+                  });
+                },
+                backgroundColor: AppColors.white,
+                child: const Icon(Icons.close, color: AppColors.darkGray),
+              ),
+            ),
+
+          // Indicateur du nombre de résultats
           Positioned(
             left: 16,
-            right: 16,
-            bottom: 16,
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedResult = null;
-                });
-              },
-              child: DestinationResultCard(result: _selectedResult!),
-            ),
-          ),
-
-        // Bouton pour fermer la sélection
-        if (_selectedResult != null)
-          Positioned(
-            right: 24,
-            bottom: 200,
-            child: FloatingActionButton.small(
-              onPressed: () {
-                setState(() {
-                  _selectedResult = null;
-                });
-              },
-              backgroundColor: AppColors.white,
-              child: const Icon(Icons.close, color: AppColors.darkGray),
-            ),
-          ),
-
-        // Indicateur du nombre de résultats
-        Positioned(
-          left: 16,
-          top: 16,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppColors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.place, size: 18, color: AppColors.primaryOrange),
-                const SizedBox(width: 6),
-                Text(
-                  '${results.length} destination${results.length > 1 ? 's' : ''}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textDark,
+            top: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
                   ),
-                ),
-              ],
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.place, size: 18, color: AppColors.primaryOrange),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${results.length} destination${results.length > 1 ? 's' : ''}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+
+          // Légende des couleurs
+          Positioned(
+            left: 16,
+            top: 56,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF4CAF50),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Top 10',
+                    style: TextStyle(fontSize: 11, color: AppColors.darkGray),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryOrange,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    'Autres',
+                    style: TextStyle(fontSize: 11, color: AppColors.darkGray),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -469,10 +539,12 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 /// Carte de résultat compacte pour une destination
 class DestinationResultCard extends StatelessWidget {
   final SearchResult result;
+  final bool showFavorite; // Si false, n'affiche pas le bouton favori
 
   const DestinationResultCard({
     super.key,
     required this.result,
+    this.showFavorite = true,
   });
 
   @override
@@ -559,26 +631,27 @@ class DestinationResultCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Coeur à droite
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+                // Coeur à droite (seulement si showFavorite est true)
+                if (showFavorite)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.15),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: FavoriteButton(
+                      result: result,
+                      size: 20,
+                      activeColor: AppColors.errorRed,
+                      inactiveColor: AppColors.darkGray,
+                    ),
                   ),
-                  child: FavoriteButton(
-                    result: result,
-                    size: 20,
-                    activeColor: AppColors.errorRed,
-                    inactiveColor: AppColors.darkGray,
-                  ),
-                ),
               ],
             ),
           ),

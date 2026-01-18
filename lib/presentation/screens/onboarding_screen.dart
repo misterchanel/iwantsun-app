@@ -138,43 +138,58 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
 
           // Indicateurs de page
-          Positioned(
-            bottom: 100,
-            left: 0,
-            right: 0,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                4,
-                (index) => _buildPageIndicator(index),
-              ),
-            ),
+          Builder(
+            builder: (context) {
+              final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
+              return Positioned(
+                bottom: 100 + bottomPadding,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    4,
+                    (index) => _buildPageIndicator(index),
+                  ),
+                ),
+              );
+            },
           ),
 
           // Boutons de navigation
-          Positioned(
-            bottom: 20,
-            left: 20,
-            right: 20,
-            child: _buildNavigationButtons(),
+          Builder(
+            builder: (context) {
+              final bottomPadding = MediaQuery.of(context).viewPadding.bottom;
+              return Positioned(
+                bottom: 20 + bottomPadding,
+                left: 20,
+                right: 20,
+                child: _buildNavigationButtons(),
+              );
+            },
           ),
 
           // Bouton Skip
           if (_currentPage < 3)
-            Positioned(
-              top: 50,
-              right: 20,
-              child: TextButton(
-                onPressed: _skipOnboarding,
-                child: const Text(
-                  'Passer',
-                  style: TextStyle(
-                    color: AppColors.primaryOrange,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+            Builder(
+              builder: (context) {
+                final topPadding = MediaQuery.of(context).viewPadding.top;
+                return Positioned(
+                  top: 16 + topPadding,
+                  right: 20,
+                  child: TextButton(
+                    onPressed: _skipOnboarding,
+                    child: const Text(
+                      'Passer',
+                      style: TextStyle(
+                        color: AppColors.primaryOrange,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
         ],
       ),
@@ -238,7 +253,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return Container(
       decoration: const BoxDecoration(
         image: DecorationImage(
-          image: AssetImage('assets/images/accueil.png'),
+          image: AssetImage('assets/images/vache.png'),
           fit: BoxFit.cover,
         ),
       ),
@@ -373,7 +388,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return Container(
       decoration: const BoxDecoration(
         image: DecorationImage(
-          image: AssetImage('assets/images/terrasse.png'),
+          image: AssetImage('assets/images/rando.png'),
           fit: BoxFit.cover,
         ),
       ),
@@ -528,7 +543,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return Container(
       decoration: const BoxDecoration(
         image: DecorationImage(
-          image: AssetImage('assets/images/vache.png'),
+          image: AssetImage('assets/images/terrasse.png'),
           fit: BoxFit.cover,
         ),
       ),

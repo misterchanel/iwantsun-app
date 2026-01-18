@@ -136,15 +136,30 @@ class WeatherRemoteDataSourceImpl implements WeatherRemoteDataSource {
       try {
         final dateStr = times[i].toString();
         final date = DateTime.parse(dateStr);
-        
+
         // Vérifier que la date est dans la plage demandée
         if (date.isBefore(startDate.subtract(const Duration(days: 1))) ||
             date.isAfter(endDate.add(const Duration(days: 1)))) {
           continue;
         }
 
-        final tempMax = (tempsMax[i] ?? 0.0).toDouble();
-        final tempMin = (tempsMin[i] ?? 0.0).toDouble();
+        // Ignorer les jours avec des données manquantes ou invalides
+        final rawTempMax = tempsMax[i];
+        final rawTempMin = tempsMin[i];
+        if (rawTempMax == null || rawTempMin == null) {
+          _logger.warning('Skipping day $dateStr: missing temperature data');
+          continue;
+        }
+
+        final tempMax = rawTempMax.toDouble();
+        final tempMin = rawTempMin.toDouble();
+
+        // Vérifier que les températures sont dans une plage réaliste
+        if (tempMax < -60 || tempMax > 60 || tempMin < -60 || tempMin > 60) {
+          _logger.warning('Skipping day $dateStr: unrealistic temperature values (min=$tempMin, max=$tempMax)');
+          continue;
+        }
+
         final tempAvg = (tempMax + tempMin) / 2;
         final weatherCode = weatherCodes[i] ?? 0;
 

@@ -119,6 +119,11 @@ class SearchLocationsUseCase {
           endDate: params.endDate,
         );
 
+        // Ignorer les résultats sans prévisions valides
+        if (weatherForecast.forecasts.isEmpty) {
+          return null;
+        }
+
         // Calculer le score météo avec les paramètres souhaités
         final weatherScore = _calculateWeatherScoreForParams(
           weatherForecast,
@@ -406,6 +411,11 @@ class SearchLocationsUseCase {
           startDate: params.startDate,
           endDate: params.endDate,
         );
+
+        // Ignorer les résultats sans prévisions valides
+        if (weatherForecast.forecasts.isEmpty) {
+          return null;
+        }
 
         final weatherScore = _calculateWeatherScoreForParams(
           weatherForecast,

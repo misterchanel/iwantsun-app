@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:iwantsun/core/services/user_preferences_service.dart';
 import 'package:iwantsun/core/services/cache_service.dart';
 import 'package:iwantsun/core/theme/app_colors.dart';
-import 'package:iwantsun/presentation/providers/theme_provider.dart';
 import 'package:iwantsun/core/l10n/app_localizations.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -20,6 +19,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   UserPreferences? _preferences;
   bool _isLoading = true;
 
+  // État local pour les sliders (feedback immédiat)
+  double _localTextScale = 1.0;
+
   @override
   void initState() {
     super.initState();
@@ -31,13 +33,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await _prefsService.loadPreferences();
     setState(() {
       _preferences = prefs;
+      // Initialiser l'état local depuis les préférences
+      _localTextScale = prefs.textScaleFactor;
       _isLoading = false;
     });
   }
 
   Future<void> _updatePreference(UserPreferences Function(UserPreferences) updater) async {
-    await _prefsService.updatePreferences(updater);
-    await _loadPreferences();
+    if (_preferences == null) return;
+    final newPrefs = updater(_preferences!);
+    setState(() {
+      _preferences = newPrefs;
+    });
+    await _prefsService.savePreferences(newPrefs);
   }
 
   @override
@@ -60,24 +68,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                16,
+                16 + MediaQuery.of(context).viewPadding.bottom,
+              ),
               children: [
-                _buildSection(
-                  title: 'Recherche par défaut',
-                  icon: Icons.search,
-                  children: [
-                    // _buildTemperatureSettings(), // Supprimé selon demande utilisateur
-                    // const SizedBox(height: 12),
-                    _buildRadiusSettings(),
-                  ],
-                ),
-                const SizedBox(height: 24),
                 _buildSection(
                   title: 'Apparence',
                   icon: Icons.palette,
                   children: [
-                    _buildThemeSelector(),
-                    _buildDivider(),
                     _buildLanguageSelector(),
                   ],
                 ),
@@ -171,132 +172,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Divider(height: 1, color: AppColors.lightGray.withOpacity(0.5));
   }
 
-  Widget _buildTemperatureSettings() {
-    final minTemp = _preferences?.defaultMinTemperature ?? 20.0;
-    final maxTemp = _preferences?.defaultMaxTemperature ?? 30.0;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Températures par défaut',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textDark,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Min: ${minTemp.toInt()}°C',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.darkGray.withOpacity(0.7),
-                      ),
-                    ),
-                    Slider(
-                      value: minTemp,
-                      min: 0,
-                      max: 40,
-                      divisions: 40,
-                      activeColor: AppColors.primaryOrange,
-                      onChanged: (value) {
-                        _updatePreference((prefs) => prefs.copyWith(
-                              defaultMinTemperature: () => value,
-                            ));
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Max: ${maxTemp.toInt()}°C',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.darkGray.withOpacity(0.7),
-                      ),
-                    ),
-                    Slider(
-                      value: maxTemp,
-                      min: 0,
-                      max: 40,
-                      divisions: 40,
-                      activeColor: AppColors.primaryOrange,
-                      onChanged: (value) {
-                        _updatePreference((prefs) => prefs.copyWith(
-                              defaultMaxTemperature: () => value,
-                            ));
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRadiusSettings() {
-    final radius = _preferences?.defaultSearchRadius ?? 100.0;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Rayon de recherche',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textDark,
-                ),
-              ),
-              Text(
-                '${radius.toInt()} km',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primaryOrange,
-                ),
-              ),
-            ],
-          ),
-          Slider(
-            value: radius,
-            min: 25,
-            max: 300,
-            divisions: 11,
-            activeColor: AppColors.primaryOrange,
-            onChanged: (value) {
-              _updatePreference((prefs) => prefs.copyWith(
-                    defaultSearchRadius: () => value,
-                  ));
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildTemperatureUnitSwitch() {
     final isCelsius =
         _preferences?.temperatureUnit == TemperatureUnit.celsius;
@@ -330,8 +205,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildTextScaleSlider() {
-    final scale = _preferences?.textScaleFactor ?? 1.0;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
@@ -349,7 +222,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               Text(
-                '${(scale * 100).toInt()}%',
+                '${(_localTextScale * 100).toInt()}%',
                 style: const TextStyle(
                   fontSize: 12,
                   color: AppColors.primaryOrange,
@@ -358,12 +231,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           Slider(
-            value: scale,
+            value: _localTextScale,
             min: 0.8,
             max: 1.5,
             divisions: 7,
             activeColor: AppColors.primaryOrange,
             onChanged: (value) {
+              setState(() {
+                _localTextScale = value;
+              });
+            },
+            onChangeEnd: (value) {
               _updatePreference((prefs) => prefs.copyWith(
                     textScaleFactor: value,
                   ));
@@ -540,103 +418,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildThemeSelector() {
-    return Consumer<ThemeProvider>(
-      builder: (context, themeProvider, _) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Thème',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textDark,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  _buildThemeOption(
-                    context: context,
-                    icon: Icons.brightness_auto,
-                    label: 'Auto',
-                    isSelected: themeProvider.themeMode == AppThemeMode.system,
-                    onTap: () => themeProvider.setThemeMode(AppThemeMode.system),
-                  ),
-                  const SizedBox(width: 12),
-                  _buildThemeOption(
-                    context: context,
-                    icon: Icons.light_mode,
-                    label: 'Clair',
-                    isSelected: themeProvider.themeMode == AppThemeMode.light,
-                    onTap: () => themeProvider.setThemeMode(AppThemeMode.light),
-                  ),
-                  const SizedBox(width: 12),
-                  _buildThemeOption(
-                    context: context,
-                    icon: Icons.dark_mode,
-                    label: 'Sombre',
-                    isSelected: themeProvider.themeMode == AppThemeMode.dark,
-                    onTap: () => themeProvider.setThemeMode(AppThemeMode.dark),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildThemeOption({
-    required BuildContext context,
-    required IconData icon,
-    required String label,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? AppColors.primaryOrange.withOpacity(0.1)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isSelected ? AppColors.primaryOrange : AppColors.lightGray,
-              width: isSelected ? 2 : 1,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                color: isSelected ? AppColors.primaryOrange : AppColors.darkGray,
-                size: 24,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  color: isSelected ? AppColors.primaryOrange : AppColors.darkGray,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildLanguageSelector() {
     return Consumer<LocaleProvider>(
       builder: (context, localeProvider, _) {
@@ -748,6 +529,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           if (confirm == true) {
             await _prefsService.resetToDefaults();
+            // Réinitialiser l'état local
+            setState(() {
+              _localTextScale = 1.0;
+            });
             await _loadPreferences();
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
