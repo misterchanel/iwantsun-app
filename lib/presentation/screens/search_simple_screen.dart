@@ -528,9 +528,9 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-              // Section Localisation
+              // Section Localisation (Centre de la zone de recherche)
               _buildSection(
-                title: 'Localisation',
+                title: 'Centre de la zone de recherche',
                 icon: Icons.location_on,
                 child: Column(
                   children: [
@@ -543,22 +543,6 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
                       onFieldSubmitted: _searchLocation,
                       isLoading: _isSearchingLocation,
                     ),
-                    // Indicateur de chargement si recherche en cours
-                    if (_isSearchingLocation)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 8.0),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                            SizedBox(width: 8),
-                            Text('Recherche de la localisation...'),
-                          ],
-                        ),
-                      ),
                     if (_locationError != null) ...[
                       const SizedBox(height: 8),
                       InlineError(message: _locationError!),
@@ -576,6 +560,59 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                       ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Section Rayon de recherche (déplacé ici, juste après localisation)
+              _buildSection(
+                title: 'Rayon de recherche',
+                icon: Icons.radio_button_checked,
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Text(
+                        '${_searchRadius.toInt()} km',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primaryOrange,
+                          letterSpacing: -1,
+                          shadows: [
+                            Shadow(
+                              color: AppColors.primaryOrange.withOpacity(0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Slider(
+                      value: _searchRadius,
+                      min: 0,
+                      max: 200,
+                      divisions: 40,
+                      activeColor: AppColors.primaryOrange,
+                      inactiveColor: AppColors.mediumGray.withOpacity(0.3),
+                      label: '${_searchRadius.toInt()} km',
+                      onChanged: (value) {
+                        setState(() {
+                          _searchRadius = value;
+                        });
+                      },
+                      onChangeEnd: (value) {
+                        // Recalculer les températures si localisation et dates sont définies
+                        if (_centerLatitude != null && _centerLongitude != null &&
+                            _startDate != null && _endDate != null) {
+                          _prefillTemperature();
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -837,59 +874,6 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
                           ),
                         ),
                       ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 8),
-
-              // Section Rayon de recherche
-              _buildSection(
-                title: 'Rayon de recherche',
-                icon: Icons.radio_button_checked,
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        '${_searchRadius.toInt()} km',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primaryOrange,
-                          letterSpacing: -1,
-                          shadows: [
-                            Shadow(
-                              color: AppColors.primaryOrange.withOpacity(0.2),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Slider(
-                      value: _searchRadius,
-                      min: 0,
-                      max: 200,
-                      divisions: 40,
-                      activeColor: AppColors.primaryOrange,
-                      inactiveColor: AppColors.mediumGray.withOpacity(0.3),
-                      label: '${_searchRadius.toInt()} km',
-                      onChanged: (value) {
-                        setState(() {
-                          _searchRadius = value;
-                        });
-                      },
-                      onChangeEnd: (value) {
-                        // Recalculer les températures si localisation et dates sont définies
-                        if (_centerLatitude != null && _centerLongitude != null &&
-                            _startDate != null && _endDate != null) {
-                          _prefillTemperature();
-                        }
-                      },
-                    ),
                   ],
                 ),
               ),
