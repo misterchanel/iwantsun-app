@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:iwantsun/core/theme/app_colors.dart';
 import 'package:iwantsun/domain/entities/search_result.dart';
@@ -166,20 +167,60 @@ class _InteractiveMapState extends State<InteractiveMap> {
                 keepBuffer: 5,
               ),
 
-              // Marqueurs
+              // Marqueurs avec clustering (Point 15)
               if (widget.markers.isNotEmpty)
-                MarkerLayer(
-                  markers: widget.markers.map((mapMarker) {
-                    return Marker(
-                      point: mapMarker.position,
-                      width: 40,
-                      height: 40,
-                      child: GestureDetector(
-                        onTap: () => widget.onMarkerTap?.call(mapMarker),
-                        child: _buildMarkerIcon(mapMarker),
-                      ),
-                    );
-                  }).toList(),
+                MarkerClusterLayerWidget(
+                  options: MarkerClusterLayerOptions(
+                    maxClusterRadius: 80, // Rayon maximum pour créer un cluster (en pixels)
+                    size: const Size(40, 40),
+                    markers: widget.markers.map((mapMarker) {
+                      return Marker(
+                        point: mapMarker.position,
+                        width: 40,
+                        height: 40,
+                        child: GestureDetector(
+                          onTap: () => widget.onMarkerTap?.call(mapMarker),
+                          child: _buildMarkerIcon(mapMarker),
+                        ),
+                      );
+                    }).toList(),
+                    builder: (context, markers) {
+                      // Widget personnalisé pour les clusters
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryOrange,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white,
+                            width: 3,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primaryOrange.withOpacity(0.4),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Text(
+                            '${markers.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                    // Animation lors de la création/suppression de clusters
+                    animate: true,
+                    // Zoom automatique lors du clic sur un cluster
+                    zoomToBoundsOnClick: true,
+                    // Taille minimale du cluster (en pixels)
+                    disableClusteringAtZoom: 15, // Désactiver le clustering au zoom 15+
+                  ),
                 ),
 
               // Attribution (obligatoire pour OSM)

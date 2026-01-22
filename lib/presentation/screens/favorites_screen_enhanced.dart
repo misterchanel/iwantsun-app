@@ -148,7 +148,7 @@ class _FavoritesScreenEnhancedState extends State<FavoritesScreenEnhanced>
             IconButton(
               onPressed: () async {
                 final text = await provider.exportFavorites();
-                await Share.share(text);
+                await SharePlus.instance.share(ShareParams(text: text));
               },
               icon: const Icon(Icons.share, color: Colors.white),
               tooltip: 'Partager',

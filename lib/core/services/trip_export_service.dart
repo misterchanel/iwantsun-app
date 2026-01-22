@@ -250,7 +250,7 @@ class TripExportService {
         break;
     }
 
-    await Share.share(content, subject: subject);
+    await SharePlus.instance.share(ShareParams(text: content, subject: subject));
     _logger.info('Shared trip: ${trip.destination} as $format');
   }
 
@@ -277,7 +277,7 @@ class TripExportService {
         break;
     }
 
-    await Share.share(content, subject: subject);
+    await SharePlus.instance.share(ShareParams(text: content, subject: subject));
     _logger.info('Shared ${trips.length} trips as $format');
   }
 

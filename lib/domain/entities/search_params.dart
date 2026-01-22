@@ -58,7 +58,7 @@ const List<TimeSlot> defaultTimeSlots = [
   TimeSlot.evening,
 ];
 
-/// Paramètres de recherche simple
+/// Paramètres de recherche de destination
 class SearchParams {
   final double centerLatitude;
   final double centerLongitude;
@@ -138,7 +138,7 @@ class SearchParams {
   }
 }
 
-/// Paramètres de recherche avancée (avec activités)
+/// Paramètres de recherche d'activité
 class AdvancedSearchParams extends SearchParams {
   final List<ActivityType> desiredActivities;
 

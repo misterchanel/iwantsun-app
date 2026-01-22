@@ -56,7 +56,7 @@ class AppStrings {
 
   static const String homeQuickSearchTitle = 'Recherche rapide';
   static const String homeQuickSearchDescription = 'Trouvez une destination ensoleillée en quelques clics';
-  static const String homeAdvancedSearchTitle = 'Recherche avancée';
+  static const String homeAdvancedSearchTitle = 'Recherche d\'activité';
   static const String homeAdvancedSearchDescription = 'Affinez vos critères pour la destination parfaite';
 
   static const String homeRecentSearches = 'Vos recherches récentes';
@@ -71,8 +71,8 @@ class AppStrings {
   // RECHERCHE
   // ============================================
   static const String searchTitle = 'Trouver le soleil';
-  static const String searchSimpleMode = 'Recherche simple';
-  static const String searchAdvancedMode = 'Recherche avancée';
+  static const String searchDestinationMode = 'Recherche de destination';
+  static const String searchActivityMode = 'Recherche d\'activité';
 
   static const String searchLocationLabel = 'Point de départ';
   static const String searchLocationHint = 'Où êtes-vous actuellement ?';

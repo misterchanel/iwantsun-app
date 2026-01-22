@@ -5,7 +5,9 @@ import 'package:intl/intl.dart';
 import 'package:iwantsun/core/theme/app_colors.dart';
 import 'package:iwantsun/core/animations/list_animations.dart';
 import 'package:iwantsun/core/services/search_history_service.dart';
+import 'package:iwantsun/domain/entities/search_params.dart';
 import 'package:iwantsun/presentation/providers/favorites_provider.dart';
+import 'package:iwantsun/presentation/providers/search_provider.dart';
 import 'package:iwantsun/presentation/widgets/empty_state.dart';
 import 'package:iwantsun/presentation/widgets/loading_indicator.dart';
 import 'package:iwantsun/presentation/widgets/animated_card.dart';
@@ -135,7 +137,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             title: 'Aucun historique',
             message: 'Vos recherches récentes apparaîtront ici.',
             actionLabel: 'Nouvelle recherche',
-            onAction: () => context.go('/search/simple'),
+            onAction: () => context.go('/search/destination'),
           );
         }
 
@@ -189,6 +191,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       child: _HistoryEntryCard(
                         entry: e.value,
                         onTap: () => _replaySearch(e.value),
+                        onViewResults: e.value.results != null && e.value.results!.isNotEmpty
+                            ? () => _viewResults(e.value)
+                            : null,
                         onDelete: () => _deleteEntry(e.value),
                       ),
                     );
@@ -238,8 +243,23 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   void _replaySearch(SearchHistoryEntry entry) {
+    // Si des résultats sont disponibles, naviguer vers les résultats (Point 12)
+    if (entry.results != null && entry.results!.isNotEmpty) {
+      // Stocker les résultats dans le provider
+      final searchProvider = context.read<SearchProvider>();
+      searchProvider.setResults(entry.results!);
+      context.push('/search/results');
+    } else {
+      // Sinon, pré-remplir le formulaire
+      if (entry.params is AdvancedSearchParams) {
+        context.push('/search/activity', extra: entry.params);
+      } else {
+        context.push('/search/destination', extra: entry.params);
+      }
+    }
+  }
     // Navigation vers l'écran de recherche avec les paramètres pré-remplis
-    context.go('/search/simple', extra: entry.params);
+    context.go('/search/destination', extra: entry.params);
   }
 
   Future<void> _deleteEntry(SearchHistoryEntry entry) async {
@@ -297,11 +317,13 @@ class _HistoryEntryCard extends StatelessWidget {
   final SearchHistoryEntry entry;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback? onViewResults; // Point 12
 
   const _HistoryEntryCard({
     required this.entry,
     required this.onTap,
     required this.onDelete,
+    this.onViewResults,
   });
 
   @override
@@ -397,26 +419,42 @@ class _HistoryEntryCard extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: entry.resultsCount > 0
-                        ? AppColors.successGreen.withOpacity(0.1)
-                        : AppColors.errorRed.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '${entry.resultsCount} résultat${entry.resultsCount > 1 ? 's' : ''}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: entry.resultsCount > 0
-                          ? AppColors.successGreen
-                          : AppColors.errorRed,
+                if (onViewResults != null && entry.resultsCount > 0) ...[
+                  // Bouton pour voir les résultats (Point 12)
+                  OutlinedButton.icon(
+                    onPressed: onViewResults,
+                    icon: const Icon(Icons.visibility, size: 14),
+                    label: Text('Voir ${entry.resultsCount} résultat${entry.resultsCount > 1 ? 's' : ''}'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primaryBlue,
+                      side: BorderSide(color: AppColors.primaryBlue.withOpacity(0.5)),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      minimumSize: const Size(0, 28),
                     ),
                   ),
-                ),
-                const SizedBox(height: 4),
+                  const SizedBox(height: 4),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: entry.resultsCount > 0
+                          ? AppColors.successGreen.withOpacity(0.1)
+                          : AppColors.errorRed.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${entry.resultsCount} résultat${entry.resultsCount > 1 ? 's' : ''}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: entry.resultsCount > 0
+                            ? AppColors.successGreen
+                            : AppColors.errorRed,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
                 Text(
                   timeFormat.format(entry.searchedAt),
                   style: const TextStyle(
@@ -509,7 +547,7 @@ class RecentSearchesWidget extends StatelessWidget {
                   final entry = recentSearches[index];
                   return _RecentSearchChip(
                     entry: entry,
-                    onTap: () => context.go('/search/simple', extra: entry.params),
+                    onTap: () => context.go('/search/destination', extra: entry.params),
                   );
                 },
               ),

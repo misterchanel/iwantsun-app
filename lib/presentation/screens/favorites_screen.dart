@@ -46,15 +46,33 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         _favorites?.removeWhere((f) => f.id == favorite.id);
       });
 
+      // Undo favoris implémenté (Point 19)
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${favorite.locationName} retiré des favoris'),
           action: SnackBarAction(
             label: 'Annuler',
-            onPressed: () {
-              // TODO: Implémenter undo
+            textColor: AppColors.white,
+            onPressed: () async {
+              // Réajouter le favoris
+              final reAdded = await _favoritesService.addFavoriteFromFavorite(favorite);
+              if (reAdded && mounted) {
+                setState(() {
+                  _favorites = _favorites ?? [];
+                  _favorites!.insert(0, favorite);
+                });
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('${favorite.locationName} réajouté aux favoris'),
+                    backgroundColor: Colors.green,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
             },
           ),
+          duration: const Duration(seconds: 4),
         ),
       );
     }
@@ -62,7 +80,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   Future<void> _shareAllFavorites() async {
     final text = await _favoritesService.exportFavorites();
-    await Share.share(text);
+    await SharePlus.instance.share(ShareParams(text: text));
   }
 
   Future<void> _clearAllFavorites() async {

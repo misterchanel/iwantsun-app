@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /s \"C:\\\\Users\\\\chane\\\\Desktop\\\\iwantsun\\\\lib\" /b)",
+      "Bash(flutter pub get:*)",
+      "Bash(flutter devices:*)",
+      "Bash(flutter run:*)",
+      "Bash(flutter clean:*)",
+      "Bash(timeout /t 1)",
+      "Bash(flutter analyze:*)",
+      "Bash(findstr:*)",
+      "Bash(dart analyze:*)"
+    ]
+  }
+}

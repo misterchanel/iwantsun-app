@@ -71,3 +71,23 @@ class ApiKeyException implements Exception {
   @override
   String toString() => 'ApiKeyException: $message';
 }
+
+/// Types d'erreurs Firebase
+enum FirebaseErrorType {
+  noResults,
+  networkError,
+  timeout,
+  invalidData,
+  generic,
+}
+
+/// Exception Firebase
+class FirebaseSearchException implements Exception {
+  final String message;
+  final FirebaseErrorType type;
+
+  FirebaseSearchException(this.message, this.type);
+
+  @override
+  String toString() => 'FirebaseSearchException[$type]: $message';
+}

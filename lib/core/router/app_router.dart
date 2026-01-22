@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:iwantsun/domain/entities/search_params.dart';
 import 'package:iwantsun/presentation/screens/welcome_screen.dart';
 import 'package:iwantsun/presentation/screens/onboarding_screen.dart';
 import 'package:iwantsun/presentation/screens/home_screen.dart';
-import 'package:iwantsun/presentation/screens/search_simple_screen.dart';
-import 'package:iwantsun/presentation/screens/search_advanced_screen.dart';
+import 'package:iwantsun/presentation/screens/search_destination_screen.dart';
+import 'package:iwantsun/presentation/screens/search_activity_screen.dart';
 import 'package:iwantsun/presentation/screens/search_results_screen.dart';
 import 'package:iwantsun/presentation/screens/favorites_screen_enhanced.dart';
 import 'package:iwantsun/presentation/screens/history_screen.dart';
@@ -47,24 +48,30 @@ class AppRouter {
         ),
       ),
       GoRoute(
-        path: '/search/simple',
-        pageBuilder: (context, state) => CustomTransitionPage(
-          key: state.pageKey,
-          child: const SearchSimpleScreen(),
-          transitionsBuilder: AppAnimations.slideTransition(
-            direction: SlideDirection.left,
-          ),
-        ),
+        path: '/search/destination',
+        pageBuilder: (context, state) {
+          final params = state.extra as SearchParams?;
+          return CustomTransitionPage(
+            key: state.pageKey,
+            child: SearchDestinationScreen(prefillParams: params),
+            transitionsBuilder: AppAnimations.slideTransition(
+              direction: SlideDirection.left,
+            ),
+          );
+        },
       ),
       GoRoute(
-        path: '/search/advanced',
-        pageBuilder: (context, state) => CustomTransitionPage(
-          key: state.pageKey,
-          child: const SearchAdvancedScreen(),
-          transitionsBuilder: AppAnimations.slideTransition(
-            direction: SlideDirection.left,
-          ),
-        ),
+        path: '/search/activity',
+        pageBuilder: (context, state) {
+          final params = state.extra as SearchParams?;
+          return CustomTransitionPage(
+            key: state.pageKey,
+            child: SearchActivityScreen(prefillParams: params),
+            transitionsBuilder: AppAnimations.slideTransition(
+              direction: SlideDirection.left,
+            ),
+          );
+        },
       ),
       GoRoute(
         path: '/search/results',

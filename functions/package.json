@@ -8,21 +8,27 @@
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "lib/index.js",
   "dependencies": {
-    "axios": "^1.6.0",
+    "axios": "^1.13.2",
     "firebase-admin": "^13.6.0",
     "firebase-functions": "^7.0.3"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "firebase-functions-test": "^3.0.0",
-    "typescript": "^5.0.0"
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.18.13",
+    "firebase-functions-test": "^3.3.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.7.2"
   },
   "private": true
 }

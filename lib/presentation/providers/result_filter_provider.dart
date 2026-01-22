@@ -85,27 +85,31 @@ class ResultFilterProvider extends ChangeNotifier {
     // Appliquer les filtres
     if (_filters.hasActiveFilters) {
       results = results.where((result) {
-        // Filtre par prix (simulé car pas de données de prix actuellement)
-        // Dans une vraie implémentation, vous récupéreriez le prix depuis les hôtels
+        // Filtre par prix - Désactivé car pas de données hôtels disponibles
+        // Les filtres de prix seront masqués dans l'UI
         if (_filters.priceRanges.isNotEmpty) {
-          // TODO: Filtrer par prix réel des hôtels
-          // Pour l'instant, on accepte tous les résultats
+          // Pas de données de prix disponibles actuellement
+          // On accepte tous les résultats
         }
 
-        // Filtre par note (simulé)
+        // Filtre par note - Désactivé car pas de données hôtels disponibles
         if (_filters.minRating != null) {
-          // TODO: Filtrer par note réelle des hôtels
+          // Pas de données de note disponibles actuellement
+          // On accepte tous les résultats
         }
 
-        // Filtre par nombre d'activités (simulé)
+        // Filtre par nombre d'activités - IMPLÉMENTÉ
         if (_filters.minActivities != null) {
-          // TODO: Filtrer par nombre réel d'activités
-          // Pour l'instant, on accepte tous les résultats
+          final activityCount = result.activities?.length ?? 0;
+          if (activityCount < _filters.minActivities!) {
+            return false;
+          }
         }
 
-        // Filtre par type d'hébergement (simulé)
+        // Filtre par type d'hébergement - Désactivé car pas de données hôtels disponibles
         if (_filters.accommodationTypes.isNotEmpty) {
-          // TODO: Filtrer par type réel d'hébergement
+          // Pas de données d'hébergement disponibles actuellement
+          // On accepte tous les résultats
         }
 
         return true;
@@ -125,8 +129,8 @@ class ResultFilterProvider extends ChangeNotifier {
           return tempB.compareTo(tempA);
 
         case SortOption.weatherCondition:
-          // Trier par conditions météo (du mieux au pire)
-          // clear > partly_cloudy > cloudy > rain > snow
+          // Trier par conditions météo (du mieux au pire) - AMÉLIORÉ
+          // Utilise la condition dominante sur toute la période au lieu du premier jour
           int conditionScore(String condition) {
             switch (condition.toLowerCase()) {
               case 'clear':
@@ -143,12 +147,32 @@ class ResultFilterProvider extends ChangeNotifier {
                 return 0;
             }
           }
-          final condA = a.weatherForecast.forecasts.isNotEmpty
-              ? conditionScore(a.weatherForecast.forecasts.first.condition)
-              : 0;
-          final condB = b.weatherForecast.forecasts.isNotEmpty
-              ? conditionScore(b.weatherForecast.forecasts.first.condition)
-              : 0;
+          
+          // Calculer la condition dominante pour chaque résultat
+          String getDominantCondition(List<dynamic> forecasts) {
+            if (forecasts.isEmpty) return 'unknown';
+            
+            final conditionCounts = <String, int>{};
+            for (final forecast in forecasts) {
+              final condition = (forecast as dynamic).condition?.toString() ?? 'unknown';
+              conditionCounts[condition] = (conditionCounts[condition] ?? 0) + 1;
+            }
+            
+            // Retourner la condition la plus fréquente
+            String dominant = 'unknown';
+            int maxCount = 0;
+            conditionCounts.forEach((condition, count) {
+              if (count > maxCount) {
+                maxCount = count;
+                dominant = condition;
+              }
+            });
+            
+            return dominant;
+          }
+          
+          final condA = conditionScore(getDominantCondition(a.weatherForecast.forecasts));
+          final condB = conditionScore(getDominantCondition(b.weatherForecast.forecasts));
           return condB.compareTo(condA);
 
         case SortOption.distance:

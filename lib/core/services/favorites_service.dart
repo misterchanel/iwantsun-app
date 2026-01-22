@@ -79,6 +79,34 @@ class FavoritesService {
     }
   }
 
+  /// Réajouter un favori (pour undo) - Point 19
+  Future<bool> addFavoriteFromFavorite(Favorite favorite) async {
+    try {
+      final favorites = await getFavorites();
+      
+      // Vérifier si déjà présent
+      if (favorites.any((f) => f.id == favorite.id)) {
+        _logger.info('Favorite already exists: ${favorite.locationName}');
+        return false;
+      }
+
+      // Créer un nouveau favori avec la date actuelle
+      final newFavorite = favorite.copyWith(
+        id: '${favorite.locationName}_${DateTime.now().millisecondsSinceEpoch}',
+        savedAt: DateTime.now(),
+      );
+
+      favorites.insert(0, newFavorite); // Ajouter en première position
+
+      await _saveFavorites(favorites);
+      _logger.info('Re-added favorite: ${newFavorite.locationName}');
+      return true;
+    } catch (e) {
+      _logger.error('Failed to re-add favorite', e);
+      return false;
+    }
+  }
+
   /// Retirer une destination des favoris
   Future<bool> removeFavorite(String favoriteId) async {
     try {

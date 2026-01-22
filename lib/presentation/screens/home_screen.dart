@@ -106,32 +106,38 @@ class HomeScreen extends StatelessWidget {
                         RecentSearchesChips(
                           maxChips: 3,
                           onSearchSelected: (entry) {
-                            // TODO: Relancer la recherche ou naviguer vers résultats
-                            context.push('/search/simple');
+                            // Pré-remplir et naviguer vers le formulaire approprié (Point 5/22)
+                            if (entry.params is AdvancedSearchParams) {
+                              // Recherche d'activité
+                              context.push('/search/activity', extra: entry.params);
+                            } else {
+                              // Recherche de destination
+                              context.push('/search/destination', extra: entry.params);
+                            }
                           },
                         ),
                         const SizedBox(height: 24),
-                        // Mode recherche simple
+                        // Mode recherche de destination
                         _SearchModeCard(
-                          title: 'Recherche Simple',
+                          title: 'Recherche de Destination',
                           description:
                               'Recherchez par météo, localisation et période',
                           icon: Icons.search,
                           color: AppColors.primaryOrange,
                           onTap: () {
-                            context.push('/search/simple');
+                            context.push('/search/destination');
                           },
                         ),
                         const SizedBox(height: 24),
-                        // Mode recherche avancée
+                        // Mode recherche d'activité
                         _SearchModeCard(
-                          title: 'Recherche avec Activités',
+                          title: 'Recherche d\'Activité',
                           description:
-                              'Recherchez également par activités extérieures',
+                              'Recherchez des destinations pour vos activités',
                           icon: Icons.sports_soccer,
                           color: AppColors.orangeSun,
                           onTap: () {
-                            context.push('/search/advanced');
+                            context.push('/search/activity');
                           },
                         ),
                       ],

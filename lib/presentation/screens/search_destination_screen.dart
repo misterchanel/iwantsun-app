@@ -12,21 +12,24 @@ import 'package:iwantsun/data/repositories/location_repository_impl.dart';
 import 'package:iwantsun/data/datasources/remote/location_remote_datasource.dart';
 import 'package:iwantsun/data/repositories/weather_repository_impl.dart';
 import 'package:iwantsun/data/datasources/remote/weather_remote_datasource.dart';
+import 'package:iwantsun/core/services/firebase_api_service.dart';
 import 'package:iwantsun/presentation/providers/search_provider.dart';
 import 'package:iwantsun/presentation/widgets/loading_indicator.dart';
 import 'package:iwantsun/presentation/widgets/error_message.dart';
 import 'package:iwantsun/presentation/widgets/location_picker_dialog.dart';
 import 'package:iwantsun/presentation/widgets/search_autocomplete.dart';
 
-/// Écran de recherche simple
-class SearchSimpleScreen extends StatefulWidget {
-  const SearchSimpleScreen({super.key});
+/// Écran de recherche de destination
+class SearchDestinationScreen extends StatefulWidget {
+  final SearchParams? prefillParams; // Paramètres pour pré-remplir (Point 5/22)
+  
+  const SearchDestinationScreen({super.key, this.prefillParams});
 
   @override
-  State<SearchSimpleScreen> createState() => _SearchSimpleScreenState();
+  State<SearchDestinationScreen> createState() => _SearchDestinationScreenState();
 }
 
-class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
+class _SearchDestinationScreenState extends State<SearchDestinationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _locationController = TextEditingController();
   final _locationFocusNode = FocusNode();
@@ -50,6 +53,60 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
     {'value': 'cloudy', 'label': 'Nuageux', 'icon': Icons.cloud},
     {'value': 'rain', 'label': 'Pluvieux', 'icon': Icons.grain},
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Pré-remplir avec les paramètres si fournis (Point 5/22)
+    if (widget.prefillParams != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _prefillFromParams(widget.prefillParams!);
+      });
+    }
+  }
+
+  /// Pré-remplit le formulaire avec les paramètres fournis
+  void _prefillFromParams(SearchParams params) {
+    setState(() {
+      _minTemperature = params.desiredMinTemperature ?? 20.0;
+      _maxTemperature = params.desiredMaxTemperature ?? 30.0;
+      _searchRadius = params.searchRadius;
+      _startDate = params.startDate;
+      _endDate = params.endDate;
+      _centerLatitude = params.centerLatitude;
+      _centerLongitude = params.centerLongitude;
+      if (params.desiredConditions.isNotEmpty) {
+        _selectedConditions = params.desiredConditions;
+      }
+      if (params.timeSlots.isNotEmpty) {
+        _selectedTimeSlots = List.from(params.timeSlots);
+      }
+      // Essayer de récupérer le nom de localisation
+      if (_centerLatitude != null && _centerLongitude != null) {
+        _reverseGeocode();
+      }
+    });
+  }
+
+  /// Récupère le nom de localisation depuis les coordonnées
+  Future<void> _reverseGeocode() async {
+    if (_centerLatitude == null || _centerLongitude == null) return;
+    
+    try {
+      final locationRepo = LocationRepositoryImpl();
+      final location = await locationRepo.reverseGeocode(
+        _centerLatitude!,
+        _centerLongitude!,
+      );
+      if (location != null && mounted) {
+        setState(() {
+          _locationController.text = '${location.name}${location.country != null ? ', ${location.country}' : ''}';
+        });
+      }
+    } catch (e) {
+      // Ignorer les erreurs de géocodage inverse
+    }
+  }
 
   @override
   void dispose() {
@@ -125,7 +182,10 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
   void _toggleCondition(String condition) {
     setState(() {
       if (_selectedConditions.contains(condition)) {
-        _selectedConditions.remove(condition);
+        // Empêcher de tout désélectionner
+        if (_selectedConditions.length > 1) {
+          _selectedConditions.remove(condition);
+        }
       } else {
         _selectedConditions.add(condition);
       }
@@ -143,6 +203,12 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
         _selectedTimeSlots.add(slot);
       }
     });
+
+    // Recalculer les températures si le centre et les dates sont définis
+    if (_centerLatitude != null && _centerLongitude != null &&
+        _startDate != null && _endDate != null) {
+      _prefillTemperature();
+    }
   }
 
   /// Utilise la position GPS de l'utilisateur
@@ -177,29 +243,48 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
         );
       }
 
-      // Utiliser le repository pour géocoder la position
+      // Utiliser le repository pour géocoder la position avec retry
       final locationRepo = LocationRepositoryImpl(
         remoteDataSource: LocationRemoteDataSourceImpl(),
       );
 
-      final location = await locationRepo.geocodeLocation(
-        locationResult.latitude,
-        locationResult.longitude,
-      );
+      Location? location;
+      int retryCount = 0;
+      const maxRetries = 2;
+
+      // Essayer le géocodage avec retry
+      while (location == null && retryCount < maxRetries) {
+        try {
+          location = await locationRepo.geocodeLocation(
+            locationResult.latitude,
+            locationResult.longitude,
+          );
+          
+          if (location == null && retryCount < maxRetries - 1) {
+            // Attendre un peu avant de réessayer
+            await Future.delayed(Duration(milliseconds: 500 * (retryCount + 1)));
+          }
+        } catch (e) {
+          final logger = AppLogger();
+          logger.warning('Geocoding attempt ${retryCount + 1} failed: $e');
+        }
+        retryCount++;
+      }
 
       if (!mounted) return;
 
-      if (location != null) {
+      final geocodedLocation = location;
+      if (geocodedLocation != null && geocodedLocation.name.isNotEmpty) {
         setState(() {
-          _centerLatitude = location.latitude;
-          _centerLongitude = location.longitude;
-          _locationController.text = location.name;
+          _centerLatitude = geocodedLocation.latitude;
+          _centerLongitude = geocodedLocation.longitude;
+          _locationController.text = geocodedLocation.name;
           _isSearchingLocation = false;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Position trouvée: ${location.name}'),
+            content: Text('Position trouvée: ${geocodedLocation.name}'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
@@ -210,10 +295,30 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
           _prefillTemperature();
         }
       } else {
+        // Si le géocodage échoue, utiliser le displayName si disponible (pour positions IP)
+        // Sinon, afficher un message d'erreur plus clair
+        String locationName;
+        if (locationResult.displayName != null && locationResult.displayName!.isNotEmpty) {
+          locationName = locationResult.displayName!;
+        } else {
+          // Essayer de construire un nom basé sur les coordonnées ou afficher un message
+          locationName = 'Position (${locationResult.latitude.toStringAsFixed(2)}, ${locationResult.longitude.toStringAsFixed(2)})';
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Impossible de déterminer le nom de la ville. Les coordonnées seront utilisées pour la recherche.'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+
         setState(() {
           _centerLatitude = locationResult.latitude;
           _centerLongitude = locationResult.longitude;
-          _locationController.text = '${locationResult.latitude.toStringAsFixed(4)}, ${locationResult.longitude.toStringAsFixed(4)}';
+          _locationController.text = locationName;
           _isSearchingLocation = false;
         });
 
@@ -309,7 +414,7 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
     }
   }
 
-  /// Pré-remplit la température basée sur la météo des villes dans le rayon et la période
+  /// Pré-remplit la température basée sur la météo de la ville centre pour la période et les créneaux horaires
   Future<void> _prefillTemperature() async {
     // Vérifier que toutes les données nécessaires sont disponibles
     if (_centerLatitude == null || _centerLongitude == null ||
@@ -318,84 +423,66 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
     }
 
     try {
-      final locationRepo = LocationRepositoryImpl(
-        remoteDataSource: LocationRemoteDataSourceImpl(),
+      final firebaseApi = FirebaseApiService();
+
+      // Convertir les TimeSlot en strings pour l'API Firebase
+      final timeSlots = _selectedTimeSlots.map((slot) => slot.name).toList();
+
+      // Appeler la fonction Firebase pour calculer la moyenne
+      final result = await firebaseApi.calculateAverageTemperature(
+        latitude: _centerLatitude!,
+        longitude: _centerLongitude!,
+        startDate: _startDate!,
+        endDate: _endDate!,
+        timeSlots: timeSlots,
       );
-      final weatherRepo = WeatherRepositoryImpl(
-        remoteDataSource: WeatherRemoteDataSourceImpl(),
-      );
-
-      // Récupérer les villes dans le rayon de recherche
-      List<Location> locationsToCheck = [];
-      try {
-        final nearbyCities = await locationRepo.getNearbyCities(
-          latitude: _centerLatitude!,
-          longitude: _centerLongitude!,
-          radiusKm: _searchRadius,
-        );
-        // Limiter à 10 villes pour les performances
-        locationsToCheck = nearbyCities.take(10).toList();
-      } catch (e) {
-        // Si échec, utiliser uniquement le point central
-        AppLogger().warning('Impossible de récupérer les villes proches, utilisation du point central', e);
-      }
-
-      // Si aucune ville trouvée, utiliser le point central
-      if (locationsToCheck.isEmpty) {
-        locationsToCheck = [
-          Location(
-            id: 'center',
-            name: 'Centre',
-            latitude: _centerLatitude!,
-            longitude: _centerLongitude!,
-          ),
-        ];
-      }
-
-      // Récupérer les prévisions météo pour chaque ville
-      double globalMinTemp = double.infinity;
-      double globalMaxTemp = double.negativeInfinity;
-      int successCount = 0;
-
-      for (final location in locationsToCheck) {
-        try {
-          final forecast = await weatherRepo.getWeatherForecast(
-            latitude: location.latitude,
-            longitude: location.longitude,
-            startDate: _startDate!,
-            endDate: _endDate!,
-          );
-
-          // Récupérer les min/max de toutes les prévisions
-          for (final weather in forecast.forecasts) {
-            if (weather.minTemperature < globalMinTemp) {
-              globalMinTemp = weather.minTemperature;
-            }
-            if (weather.maxTemperature > globalMaxTemp) {
-              globalMaxTemp = weather.maxTemperature;
-            }
-          }
-          successCount++;
-        } catch (e) {
-          // Ignorer les erreurs pour une ville individuelle
-          continue;
-        }
-      }
 
       if (!mounted) return;
 
-      // Si on a réussi à obtenir au moins une prévision
-      if (successCount > 0 && globalMinTemp != double.infinity && globalMaxTemp != double.negativeInfinity) {
-        // Arrondir et ajouter une marge de 2 degrés
+      // Si on a des résultats, mettre à jour les températures
+      if (result != null && result['minTemperature'] != null && result['maxTemperature'] != null) {
+        final minTemp = result['minTemperature'] as double;
+        final maxTemp = result['maxTemperature'] as double;
+        final avgTemp = result['averageTemperature'] as double?;
+
         setState(() {
-          _minTemperature = (globalMinTemp - 2).clamp(0.0, 40.0);
-          _maxTemperature = (globalMaxTemp + 2).clamp(0.0, 40.0);
+          _minTemperature = minTemp.clamp(-10.0, 40.0);
+          _maxTemperature = maxTemp.clamp(-10.0, 40.0);
         });
 
-        AppLogger().info('Température pré-remplie (${successCount} villes): min=${_minTemperature.toStringAsFixed(1)}, max=${_maxTemperature.toStringAsFixed(1)}');
+        AppLogger().info('Température pré-remplie (moyenne: ${avgTemp?.toStringAsFixed(0) ?? 'N/A'}°C): min=${_minTemperature.toStringAsFixed(0)}°C, max=${_maxTemperature.toStringAsFixed(0)}°C');
+        
+        // Afficher un message d'information (Point 6)
+        if (mounted) {
+          final locationName = _locationController.text.isNotEmpty 
+              ? _locationController.text.split(',').first.trim()
+              : 'cette localisation';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.info_outline, color: AppColors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Températures pré-remplies approximativement pour $locationName. Les résultats peuvent varier selon les destinations.',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.primaryOrange,
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } else {
+        // Aucune température trouvée, ne pas modifier les valeurs
+        AppLogger().warning('Aucune température trouvée pour la période et les créneaux sélectionnés');
       }
     } catch (e) {
-      // En cas d'erreur, ne rien faire (garder les valeurs par défaut)
+      // En cas d'erreur, ne rien faire (garder les valeurs telles quelles)
       AppLogger().warning('Impossible de pré-remplir la température', e);
     }
   }
@@ -416,6 +503,24 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
       return;
     }
 
+    // Validation que la date de fin est après la date de début
+    if (_endDate!.isBefore(_startDate!) || _endDate!.isAtSameMomentAs(_startDate!)) {
+      ErrorSnackBar.show(
+        context,
+        'La date de fin doit être après la date de début',
+      );
+      return;
+    }
+
+    // Validation du rayon de recherche
+    if (_searchRadius <= 0) {
+      ErrorSnackBar.show(
+        context,
+        'Le rayon de recherche doit être supérieur à 0 km',
+      );
+      return;
+    }
+
     // Validation de la température
     if (_minTemperature >= _maxTemperature) {
       ErrorSnackBar.show(
@@ -430,6 +535,15 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
       ErrorSnackBar.show(
         context,
         'Veuillez sélectionner au moins une condition météo',
+      );
+      return;
+    }
+
+    // Validation des créneaux horaires
+    if (_selectedTimeSlots.isEmpty) {
+      ErrorSnackBar.show(
+        context,
+        'Veuillez sélectionner au moins un créneau horaire',
       );
       return;
     }
@@ -492,7 +606,7 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            const Text('Recherche Simple'),
+            const Text('Recherche de Destination'),
           ],
         ),
         backgroundColor: AppColors.primaryOrange,
@@ -595,7 +709,7 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
                     ),
                     Slider(
                       value: _searchRadius,
-                      min: 0,
+                      min: 1,
                       max: 200,
                       divisions: 40,
                       activeColor: AppColors.primaryOrange,
@@ -605,13 +719,6 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
                         setState(() {
                           _searchRadius = value;
                         });
-                      },
-                      onChangeEnd: (value) {
-                        // Recalculer les températures si localisation et dates sont définies
-                        if (_centerLatitude != null && _centerLongitude != null &&
-                            _startDate != null && _endDate != null) {
-                          _prefillTemperature();
-                        }
                       },
                     ),
                   ],
@@ -683,6 +790,70 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
                       ],
                     ),
                   ),
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Section Créneaux horaires
+              _buildSection(
+                title: 'Créneaux horaires',
+                icon: Icons.schedule,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Heures à considérer pour l\'analyse météo',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.darkGray.withOpacity(0.7),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: TimeSlot.values.map((slot) {
+                        final isSelected = _selectedTimeSlots.contains(slot);
+                        return FilterChip(
+                          selected: isSelected,
+                          label: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                slot.displayName,
+                                style: const TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              Text(
+                                slot.timeRange,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isSelected
+                                      ? AppColors.primaryOrange
+                                      : AppColors.darkGray.withOpacity(0.6),
+                                ),
+                              ),
+                            ],
+                          ),
+                          onSelected: (_) => _toggleTimeSlot(slot),
+                          selectedColor: AppColors.primaryOrange.withOpacity(0.2),
+                          checkmarkColor: AppColors.primaryOrange,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        );
+                      }).toList(),
+                    ),
+                    if (_selectedTimeSlots.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Sélectionnez au moins un créneau',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.errorRed,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
 
@@ -791,83 +962,35 @@ class _SearchSimpleScreenState extends State<SearchSimpleScreen> {
               _buildSection(
                 title: 'Conditions météo',
                 icon: Icons.wb_cloudy,
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _availableConditions.map((condition) {
-                    final isSelected = _selectedConditions.contains(condition['value']);
-                    return FilterChip(
-                      selected: isSelected,
-                      label: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(condition['icon'], size: 18),
-                          const SizedBox(width: 4),
-                          Text(condition['label']),
-                        ],
-                      ),
-                      onSelected: (_) => _toggleCondition(condition['value']),
-                      selectedColor: AppColors.primaryOrange.withOpacity(0.2),
-                      checkmarkColor: AppColors.primaryOrange,
-                    );
-                  }).toList(),
-                ),
-              ),
-
-              const SizedBox(height: 8),
-
-              // Section Créneaux horaires
-              _buildSection(
-                title: 'Créneaux horaires',
-                icon: Icons.schedule,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Heures à considérer pour l\'analyse météo',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.darkGray.withOpacity(0.7),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: TimeSlot.values.map((slot) {
-                        final isSelected = _selectedTimeSlots.contains(slot);
+                      children: _availableConditions.map((condition) {
+                        final isSelected = _selectedConditions.contains(condition['value']);
                         return FilterChip(
                           selected: isSelected,
-                          label: Column(
+                          label: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                slot.displayName,
-                                style: const TextStyle(fontWeight: FontWeight.w500),
-                              ),
-                              Text(
-                                slot.timeRange,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: isSelected
-                                      ? AppColors.primaryOrange
-                                      : AppColors.darkGray.withOpacity(0.6),
-                                ),
-                              ),
+                              Icon(condition['icon'], size: 18),
+                              const SizedBox(width: 4),
+                              Text(condition['label']),
                             ],
                           ),
-                          onSelected: (_) => _toggleTimeSlot(slot),
+                          onSelected: (_) => _toggleCondition(condition['value']),
                           selectedColor: AppColors.primaryOrange.withOpacity(0.2),
                           checkmarkColor: AppColors.primaryOrange,
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         );
                       }).toList(),
                     ),
-                    if (_selectedTimeSlots.isEmpty)
+                    if (_selectedConditions.isEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
-                          'Sélectionnez au moins un créneau',
+                          'Sélectionnez au moins une condition',
                           style: TextStyle(
                             fontSize: 12,
                             color: AppColors.errorRed,

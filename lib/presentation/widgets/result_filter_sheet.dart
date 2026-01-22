@@ -90,6 +90,15 @@ class _ResultFilterSheetState extends State<ResultFilterSheet> {
                         child: _buildSortOptions(filterProvider),
                       ),
 
+                      const SizedBox(height: 24),
+
+                      // Filtre par nombre d'activités (Point 13)
+                      _buildSection(
+                        title: 'Nombre d\'activités',
+                        icon: Icons.sports_soccer,
+                        child: _buildActivitiesFilter(filterProvider),
+                      ),
+
                       const SizedBox(height: 80), // Espace pour le bouton
                     ],
                   ),
@@ -240,6 +249,74 @@ class _ResultFilterSheetState extends State<ResultFilterSheet> {
           ),
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildActivitiesFilter(ResultFilterProvider provider) {
+    final currentMin = provider.filters.minActivities;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Minimum d\'activités trouvées',
+          style: TextStyle(
+            fontSize: 14,
+            color: AppColors.darkGray.withOpacity(0.7),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: Slider(
+                value: (currentMin ?? 0).toDouble(),
+                min: 0,
+                max: 10,
+                divisions: 10,
+                label: currentMin != null ? '$currentMin activité${currentMin > 1 ? 's' : ''}' : 'Aucun filtre',
+                activeColor: AppColors.primaryOrange,
+                inactiveColor: AppColors.mediumGray.withOpacity(0.3),
+                onChanged: (value) {
+                  provider.setMinActivities(value.toInt() > 0 ? value.toInt() : null);
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: currentMin != null 
+                    ? AppColors.primaryOrange.withOpacity(0.1)
+                    : AppColors.lightGray.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                currentMin != null ? '$currentMin+' : 'Tous',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: currentMin != null 
+                      ? AppColors.primaryOrange
+                      : AppColors.darkGray,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (currentMin != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: TextButton.icon(
+              onPressed: () => provider.setMinActivities(null),
+              icon: const Icon(Icons.clear, size: 16),
+              label: const Text('Retirer le filtre'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.darkGray,
+              ),
+            ),
+          ),
+      ],
     );
   }
 

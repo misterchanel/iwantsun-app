@@ -132,7 +132,7 @@ class AppLocalizations {
     'greeting_evening': 'Bonsoir',
     'home_subtitle': 'Où souhaitez-vous trouver le soleil ?',
     'quick_search': 'Recherche rapide',
-    'advanced_search': 'Recherche avancée',
+    'advanced_search': 'Recherche d\'activité',
     'recent_searches': 'Recherches récentes',
     'my_favorites': 'Mes favoris',
 

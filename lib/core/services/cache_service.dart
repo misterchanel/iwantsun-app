@@ -15,6 +15,7 @@ class CacheService {
   static const String _activityCacheBox = 'activity_cache';
   static const String _userPreferencesBox = 'user_preferences';
   static const String _favoritesBox = 'favorites';
+  static const String _searchHistoryBox = 'search_history';
 
   // Statistiques de cache
   int _hits = 0;
@@ -39,6 +40,7 @@ class CacheService {
       await Hive.openBox(_activityCacheBox);
       await Hive.openBox(_userPreferencesBox);
       await Hive.openBox(_favoritesBox);
+      await Hive.openBox(_searchHistoryBox);
 
       _logger.info('Cache service initialized');
     } catch (e, stackTrace) {
@@ -62,7 +64,26 @@ class CacheService {
 
       // Vérifier si le cache est expiré
       final cacheEntry = cached as Map<dynamic, dynamic>;
-      final timestamp = DateTime.parse(cacheEntry['timestamp'] as String);
+      
+      // Sécuriser le cast du timestamp
+      final timestampStr = cacheEntry['timestamp'];
+      if (timestampStr == null || timestampStr is! String) {
+        _logger.warning('Invalid cache entry format for key: $key in box: $boxName, deleting');
+        await delete(key, boxName);
+        _misses++;
+        return null;
+      }
+      
+      DateTime timestamp;
+      try {
+        timestamp = DateTime.parse(timestampStr);
+      } catch (e) {
+        _logger.warning('Invalid timestamp format for key: $key in box: $boxName, deleting', e);
+        await delete(key, boxName);
+        _misses++;
+        return null;
+      }
+      
       final expiryHours = customTtlHours ?? EnvConfig.cacheDurationHours;
 
       if (DateTime.now().difference(timestamp).inHours > expiryHours) {
@@ -75,9 +96,25 @@ class CacheService {
       // Mettre à jour le lastAccessed pour LRU
       await _updateLastAccessed(key, boxName);
 
+      // Vérifier que les données existent
+      if (!cacheEntry.containsKey('data')) {
+        _logger.warning('Cache entry missing data field for key: $key in box: $boxName, deleting');
+        await delete(key, boxName);
+        _misses++;
+        return null;
+      }
+
       _hits++;
       _logger.debug('Cache hit for key: $key in box: $boxName (hit rate: ${cacheHitRate.toStringAsFixed(2)}%)');
-      return cacheEntry['data'] as T;
+      
+      try {
+        return cacheEntry['data'] as T;
+      } catch (e) {
+        _logger.warning('Failed to cast cache data for key: $key in box: $boxName, deleting', e);
+        await delete(key, boxName);
+        _misses++;
+        return null;
+      }
     } catch (e, stackTrace) {
       _logger.error('Failed to get from cache', e, stackTrace);
       return null;

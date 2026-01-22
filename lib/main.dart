@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:iwantsun/firebase_options.dart';
 import 'package:iwantsun/core/router/app_router.dart';
 import 'package:iwantsun/core/config/env_config.dart';
@@ -25,6 +26,17 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // App Check désactivé temporairement pour le développement
+  // TODO: Réactiver avant la mise en production
+  // try {
+  //   await FirebaseAppCheck.instance.activate(
+  //     androidProvider: AndroidProvider.playIntegrity,
+  //   );
+  //   debugPrint('Firebase: App Check activated');
+  // } catch (e) {
+  //   debugPrint('Firebase App Check error: $e');
+  // }
 
   // Authentification anonyme pour sécuriser les appels Cloud Functions
   try {

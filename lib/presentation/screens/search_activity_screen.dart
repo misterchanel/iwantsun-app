@@ -6,26 +6,31 @@ import 'package:iwantsun/core/utils/date_utils.dart' as date_utils;
 import 'package:iwantsun/core/services/location_service.dart';
 import 'package:iwantsun/core/services/search_history_service.dart';
 import 'package:iwantsun/core/services/logger_service.dart';
-import 'package:iwantsun/domain/entities/activity.dart';
 import 'package:iwantsun/domain/entities/search_params.dart';
+import 'package:iwantsun/domain/entities/location.dart';
 import 'package:iwantsun/data/repositories/location_repository_impl.dart';
 import 'package:iwantsun/data/datasources/remote/location_remote_datasource.dart';
 import 'package:iwantsun/data/repositories/weather_repository_impl.dart';
 import 'package:iwantsun/data/datasources/remote/weather_remote_datasource.dart';
+import 'package:iwantsun/core/services/firebase_api_service.dart';
 import 'package:iwantsun/presentation/providers/search_provider.dart';
 import 'package:iwantsun/presentation/widgets/loading_indicator.dart';
 import 'package:iwantsun/presentation/widgets/error_message.dart';
+import 'package:iwantsun/presentation/widgets/location_picker_dialog.dart';
 import 'package:iwantsun/presentation/widgets/search_autocomplete.dart';
+import 'package:iwantsun/domain/entities/activity.dart';
 
-/// Écran de recherche avancée (avec activités)
-class SearchAdvancedScreen extends StatefulWidget {
-  const SearchAdvancedScreen({super.key});
+/// Écran de recherche d'activité
+class SearchActivityScreen extends StatefulWidget {
+  final SearchParams? prefillParams; // Paramètres pour pré-remplir (Point 5/22)
+  
+  const SearchActivityScreen({super.key, this.prefillParams});
 
   @override
-  State<SearchAdvancedScreen> createState() => _SearchAdvancedScreenState();
+  State<SearchActivityScreen> createState() => _SearchActivityScreenState();
 }
 
-class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
+class _SearchActivityScreenState extends State<SearchActivityScreen> {
   final _formKey = GlobalKey<FormState>();
   final _locationController = TextEditingController();
   final _locationFocusNode = FocusNode();
@@ -36,14 +41,14 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
   double _maxTemperature = 30.0;
   double _searchRadius = 100.0;
   List<String> _selectedConditions = ['clear', 'partly_cloudy'];
-  List<ActivityType> _selectedActivities = [];
-  
+  List<TimeSlot> _selectedTimeSlots = List.from(defaultTimeSlots); // Matin, après-midi, soirée par défaut
+  List<ActivityType> _selectedActivities = []; // Activités sélectionnées
+
   bool _isSearchingLocation = false;
   double? _centerLatitude;
   double? _centerLongitude;
   String? _locationError;
-  bool _isLocationFromIp = false;
-  
+
   final List<Map<String, dynamic>> _availableConditions = [
     {'value': 'clear', 'label': 'Ensoleillé', 'icon': Icons.wb_sunny},
     {'value': 'partly_cloudy', 'label': 'Partiellement nuageux', 'icon': Icons.wb_cloudy},
@@ -51,36 +56,63 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
     {'value': 'rain', 'label': 'Pluvieux', 'icon': Icons.grain},
   ];
 
-  final Map<ActivityType, Map<String, dynamic>> _activities = {
-    ActivityType.beach: {
-      'icon': Icons.beach_access,
-      'color': AppColors.orangeSun,
-    },
-    ActivityType.hiking: {
-      'icon': Icons.hiking,
-      'color': AppColors.successGreen,
-    },
-    ActivityType.skiing: {
-      'icon': Icons.downhill_skiing,
-      'color': AppColors.primaryOrange,
-    },
-    ActivityType.surfing: {
-      'icon': Icons.surfing,
-      'color': AppColors.rainyBlue,
-    },
-    ActivityType.cycling: {
-      'icon': Icons.directions_bike,
-      'color': AppColors.warningYellow,
-    },
-    ActivityType.golf: {
-      'icon': Icons.golf_course,
-      'color': AppColors.successGreen,
-    },
-    ActivityType.camping: {
-      'icon': Icons.family_restroom,
-      'color': Colors.brown,
-    },
-  };
+  @override
+  void initState() {
+    super.initState();
+    // Pré-remplir avec les paramètres si fournis (Point 5/22)
+    if (widget.prefillParams != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _prefillFromParams(widget.prefillParams!);
+      });
+    }
+  }
+
+  /// Pré-remplit le formulaire avec les paramètres fournis
+  void _prefillFromParams(SearchParams params) {
+    setState(() {
+      _minTemperature = params.desiredMinTemperature ?? 20.0;
+      _maxTemperature = params.desiredMaxTemperature ?? 30.0;
+      _searchRadius = params.searchRadius;
+      _startDate = params.startDate;
+      _endDate = params.endDate;
+      _centerLatitude = params.centerLatitude;
+      _centerLongitude = params.centerLongitude;
+      if (params.desiredConditions.isNotEmpty) {
+        _selectedConditions = params.desiredConditions;
+      }
+      if (params.timeSlots.isNotEmpty) {
+        _selectedTimeSlots = List.from(params.timeSlots);
+      }
+      // Restaurer les activités si c'est une recherche avancée
+      if (params is AdvancedSearchParams) {
+        _selectedActivities = List.from((params as AdvancedSearchParams).desiredActivities);
+      }
+      // Essayer de récupérer le nom de localisation
+      if (_centerLatitude != null && _centerLongitude != null) {
+        _reverseGeocode();
+      }
+    });
+  }
+
+  /// Récupère le nom de localisation depuis les coordonnées
+  Future<void> _reverseGeocode() async {
+    if (_centerLatitude == null || _centerLongitude == null) return;
+    
+    try {
+      final locationRepo = LocationRepositoryImpl();
+      final location = await locationRepo.reverseGeocode(
+        _centerLatitude!,
+        _centerLongitude!,
+      );
+      if (location != null && mounted) {
+        setState(() {
+          _locationController.text = '${location.name}${location.country != null ? ', ${location.country}' : ''}';
+        });
+      }
+    } catch (e) {
+      // Ignorer les erreurs de géocodage inverse
+    }
+  }
 
   @override
   void dispose() {
@@ -89,30 +121,41 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
     super.dispose();
   }
 
-  /// Callback appelé quand l'utilisateur sélectionne une entrée d'historique
+  /// Callback quand une entrée historique est sélectionnée
   void _onHistorySelected(SearchHistoryEntry entry) {
     setState(() {
       _locationController.text = entry.locationName ?? '';
-      _centerLatitude = entry.params.centerLatitude;
-      _centerLongitude = entry.params.centerLongitude;
       _minTemperature = entry.params.desiredMinTemperature ?? 20.0;
       _maxTemperature = entry.params.desiredMaxTemperature ?? 30.0;
       _searchRadius = entry.params.searchRadius;
-      _selectedConditions = List.from(entry.params.desiredConditions);
-      _isLocationFromIp = false;
-
-      // Récupérer les dates
       _startDate = entry.params.startDate;
       _endDate = entry.params.endDate;
-
-      // Récupérer les activités si c'est une recherche avancée
+      _centerLatitude = entry.params.centerLatitude;
+      _centerLongitude = entry.params.centerLongitude;
+      if (entry.params.desiredConditions.isNotEmpty) {
+        _selectedConditions = entry.params.desiredConditions;
+      }
+      if (entry.params.timeSlots.isNotEmpty) {
+        _selectedTimeSlots = List.from(entry.params.timeSlots);
+      }
+      // Restaurer les activités si c'est une recherche avancée
       if (entry.params is AdvancedSearchParams) {
-        final advParams = entry.params as AdvancedSearchParams;
-        _selectedActivities = List.from(advParams.desiredActivities);
+        _selectedActivities = List.from((entry.params as AdvancedSearchParams).desiredActivities);
       }
     });
-
+    // Unfocus pour fermer l'overlay
     _locationFocusNode.unfocus();
+  }
+
+  /// Toggle une activité
+  void _toggleActivity(ActivityType activity) {
+    setState(() {
+      if (_selectedActivities.contains(activity)) {
+        _selectedActivities.remove(activity);
+      } else {
+        _selectedActivities.add(activity);
+      }
+    });
   }
 
   Future<void> _selectDateRange() async {
@@ -160,21 +203,33 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
   void _toggleCondition(String condition) {
     setState(() {
       if (_selectedConditions.contains(condition)) {
-        _selectedConditions.remove(condition);
+        // Empêcher de tout désélectionner
+        if (_selectedConditions.length > 1) {
+          _selectedConditions.remove(condition);
+        }
       } else {
         _selectedConditions.add(condition);
       }
     });
   }
 
-  void _toggleActivity(ActivityType activity) {
+  void _toggleTimeSlot(TimeSlot slot) {
     setState(() {
-      if (_selectedActivities.contains(activity)) {
-        _selectedActivities.remove(activity);
+      if (_selectedTimeSlots.contains(slot)) {
+        // Empêcher de tout désélectionner
+        if (_selectedTimeSlots.length > 1) {
+          _selectedTimeSlots.remove(slot);
+        }
       } else {
-        _selectedActivities.add(activity);
+        _selectedTimeSlots.add(slot);
       }
     });
+
+    // Recalculer les températures si le centre et les dates sont définis
+    if (_centerLatitude != null && _centerLongitude != null &&
+        _startDate != null && _endDate != null) {
+      _prefillTemperature();
+    }
   }
 
   /// Utilise la position GPS de l'utilisateur
@@ -209,45 +264,83 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
         );
       }
 
-      // Utiliser le repository pour géocoder la position
+      // Utiliser le repository pour géocoder la position avec retry
       final locationRepo = LocationRepositoryImpl(
         remoteDataSource: LocationRemoteDataSourceImpl(),
       );
 
-      final location = await locationRepo.geocodeLocation(
-        locationResult.latitude,
-        locationResult.longitude,
-      );
+      Location? location;
+      int retryCount = 0;
+      const maxRetries = 2;
+
+      // Essayer le géocodage avec retry
+      while (location == null && retryCount < maxRetries) {
+        try {
+          location = await locationRepo.geocodeLocation(
+            locationResult.latitude,
+            locationResult.longitude,
+          );
+          
+          if (location == null && retryCount < maxRetries - 1) {
+            // Attendre un peu avant de réessayer
+            await Future.delayed(Duration(milliseconds: 500 * (retryCount + 1)));
+          }
+        } catch (e) {
+          final logger = AppLogger();
+          logger.warning('Geocoding attempt ${retryCount + 1} failed: $e');
+        }
+        retryCount++;
+      }
 
       if (!mounted) return;
 
-      if (location != null) {
+      final geocodedLocation = location;
+      if (geocodedLocation != null && geocodedLocation.name.isNotEmpty) {
         setState(() {
-          _centerLatitude = location.latitude;
-          _centerLongitude = location.longitude;
-          _locationController.text = location.name;
+          _centerLatitude = geocodedLocation.latitude;
+          _centerLongitude = geocodedLocation.longitude;
+          _locationController.text = geocodedLocation.name;
           _isSearchingLocation = false;
-          _isLocationFromIp = locationResult.source == LocationSource.ip;
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Position trouvée: ${location.name}'),
+            content: Text('Position trouvée: ${geocodedLocation.name}'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 2),
           ),
         );
+
         // Pré-remplir la température si les dates sont déjà définies
         if (_startDate != null && _endDate != null) {
           _prefillTemperature();
         }
       } else {
+        // Si le géocodage échoue, utiliser le displayName si disponible (pour positions IP)
+        // Sinon, afficher un message d'erreur plus clair
+        String locationName;
+        if (locationResult.displayName != null && locationResult.displayName!.isNotEmpty) {
+          locationName = locationResult.displayName!;
+        } else {
+          // Essayer de construire un nom basé sur les coordonnées ou afficher un message
+          locationName = 'Position (${locationResult.latitude.toStringAsFixed(2)}, ${locationResult.longitude.toStringAsFixed(2)})';
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Impossible de déterminer le nom de la ville. Les coordonnées seront utilisées pour la recherche.'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+
         setState(() {
           _centerLatitude = locationResult.latitude;
           _centerLongitude = locationResult.longitude;
-          _locationController.text = '${locationResult.latitude.toStringAsFixed(4)}, ${locationResult.longitude.toStringAsFixed(4)}';
+          _locationController.text = locationName;
           _isSearchingLocation = false;
-          _isLocationFromIp = locationResult.source == LocationSource.ip;
         });
 
         // Pré-remplir la température si les dates sont déjà définies
@@ -262,40 +355,6 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
         _locationError = 'Erreur lors de la récupération de la position: ${e.toString()}';
         _isSearchingLocation = false;
       });
-    }
-  }
-
-  /// Pré-remplit la température basée sur la météo du lieu et de la période
-  Future<void> _prefillTemperature() async {
-    if (_centerLatitude == null || _centerLongitude == null ||
-        _startDate == null || _endDate == null) {
-      return;
-    }
-
-    try {
-      final weatherRepo = WeatherRepositoryImpl(
-        remoteDataSource: WeatherRemoteDataSourceImpl(),
-      );
-
-      final forecast = await weatherRepo.getWeatherForecast(
-        latitude: _centerLatitude!,
-        longitude: _centerLongitude!,
-        startDate: _startDate!,
-        endDate: _endDate!,
-      );
-
-      if (!mounted) return;
-
-      final avgTemp = forecast.averageTemperature;
-
-      setState(() {
-        _minTemperature = (avgTemp - 10).clamp(0.0, 40.0);
-        _maxTemperature = (avgTemp + 10).clamp(0.0, 40.0);
-      });
-
-      AppLogger().info('Température pré-remplie: min=${_minTemperature.toStringAsFixed(1)}, max=${_maxTemperature.toStringAsFixed(1)}');
-    } catch (e) {
-      AppLogger().warning('Impossible de pré-remplir la température', e);
     }
   }
 
@@ -326,18 +385,37 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
         return;
       }
 
-      // Prendre la première localisation trouvée
-      final location = locations.first;
       setState(() {
-        _centerLatitude = location.latitude;
-        _centerLongitude = location.longitude;
         _isSearchingLocation = false;
-        _isLocationFromIp = false;
       });
+
+      // Si plusieurs résultats, demander à l'utilisateur de choisir
+      Location selectedLocation;
+      if (locations.length > 1) {
+        final location = await LocationPickerDialog.show(
+          context,
+          locations: locations,
+          searchQuery: locationText,
+        );
+
+        // Si l'utilisateur annule, ne rien faire
+        if (location == null) return;
+        selectedLocation = location;
+      } else {
+        // Un seul résultat, le sélectionner automatiquement
+        selectedLocation = locations.first;
+      }
+
+      setState(() {
+        _centerLatitude = selectedLocation.latitude;
+        _centerLongitude = selectedLocation.longitude;
+      });
+
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Localisation trouvée: ${location.name}'),
+          content: Text('Localisation trouvée: ${selectedLocation.name}'),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 2),
         ),
@@ -354,6 +432,80 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
         _locationError = 'Erreur lors de la recherche: ${e.toString()}';
         _isSearchingLocation = false;
       });
+    }
+  }
+
+  /// Pré-remplit la température basée sur la météo des villes dans le rayon et la période
+  /// Pré-remplit la température basée sur la météo de la ville centre pour la période et les créneaux horaires
+  Future<void> _prefillTemperature() async {
+    // Vérifier que toutes les données nécessaires sont disponibles
+    if (_centerLatitude == null || _centerLongitude == null ||
+        _startDate == null || _endDate == null) {
+      return;
+    }
+
+    try {
+      final firebaseApi = FirebaseApiService();
+
+      // Convertir les TimeSlot en strings pour l'API Firebase
+      final timeSlots = _selectedTimeSlots.map((slot) => slot.name).toList();
+
+      // Appeler la fonction Firebase pour calculer la moyenne
+      final result = await firebaseApi.calculateAverageTemperature(
+        latitude: _centerLatitude!,
+        longitude: _centerLongitude!,
+        startDate: _startDate!,
+        endDate: _endDate!,
+        timeSlots: timeSlots,
+      );
+
+      if (!mounted) return;
+
+      // Si on a des résultats, mettre à jour les températures
+      if (result != null && result['minTemperature'] != null && result['maxTemperature'] != null) {
+        final minTemp = result['minTemperature'] as double;
+        final maxTemp = result['maxTemperature'] as double;
+        final avgTemp = result['averageTemperature'] as double?;
+
+        setState(() {
+          _minTemperature = minTemp.clamp(-10.0, 40.0);
+          _maxTemperature = maxTemp.clamp(-10.0, 40.0);
+        });
+
+        AppLogger().info('Température pré-remplie (moyenne: ${avgTemp?.toStringAsFixed(0) ?? 'N/A'}°C): min=${_minTemperature.toStringAsFixed(0)}°C, max=${_maxTemperature.toStringAsFixed(0)}°C');
+        
+        // Afficher un message d'information (Point 6)
+        if (mounted) {
+          final locationName = _locationController.text.isNotEmpty 
+              ? _locationController.text.split(',').first.trim()
+              : 'cette localisation';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.info_outline, color: AppColors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Températures pré-remplies approximativement pour $locationName. Les résultats peuvent varier selon les destinations.',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.primaryOrange,
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } else {
+        // Aucune température trouvée, ne pas modifier les valeurs
+        AppLogger().warning('Aucune température trouvée pour la période et les créneaux sélectionnés');
+      }
+    } catch (e) {
+      // En cas d'erreur, ne rien faire (garder les valeurs telles quelles)
+      AppLogger().warning('Impossible de pré-remplir la température', e);
     }
   }
 
@@ -391,6 +543,33 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
       return;
     }
 
+    // Validation des créneaux horaires
+    if (_selectedTimeSlots.isEmpty) {
+      ErrorSnackBar.show(
+        context,
+        'Veuillez sélectionner au moins un créneau horaire',
+      );
+      return;
+    }
+
+    // Validation du rayon de recherche
+    if (_searchRadius <= 0) {
+      ErrorSnackBar.show(
+        context,
+        'Le rayon de recherche doit être supérieur à 0 km',
+      );
+      return;
+    }
+
+    // Validation des activités
+    if (_selectedActivities.isEmpty) {
+      ErrorSnackBar.show(
+        context,
+        'Veuillez sélectionner au moins une activité',
+      );
+      return;
+    }
+
     // Rechercher la localisation si pas encore fait
     if (_centerLatitude == null || _centerLongitude == null) {
       await _searchLocation();
@@ -404,7 +583,7 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
       }
     }
 
-    // Créer les paramètres de recherche avancée
+    // Créer les paramètres de recherche avancée avec activités
     final searchParams = AdvancedSearchParams(
       centerLatitude: _centerLatitude!,
       centerLongitude: _centerLongitude!,
@@ -414,6 +593,7 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
       desiredMinTemperature: _minTemperature,
       desiredMaxTemperature: _maxTemperature,
       desiredConditions: _selectedConditions,
+      timeSlots: _selectedTimeSlots,
       desiredActivities: _selectedActivities,
     );
 
@@ -449,7 +629,7 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            const Text('Recherche avec Activités'),
+            const Text('Recherche d\'Activité'),
           ],
         ),
         backgroundColor: AppColors.primaryOrange,
@@ -458,7 +638,7 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
       body: Container(
         decoration: const BoxDecoration(
           image: DecorationImage(
-            image: AssetImage('assets/images/rando.png'),
+            image: AssetImage('assets/images/terrasse.png'),
             fit: BoxFit.cover,
           ),
         ),
@@ -476,80 +656,33 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
           child: Form(
             key: _formKey,
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20.0),
+              padding: EdgeInsets.fromLTRB(
+                20.0,
+                20.0,
+                20.0,
+                20.0 + MediaQuery.of(context).viewPadding.bottom,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-              // Section Localisation
+              // Section Localisation (Centre de la zone de recherche)
               _buildSection(
-                title: 'Localisation',
+                title: 'Centre de la zone de recherche',
                 icon: Icons.location_on,
                 child: Column(
                   children: [
+                    // Champ avec autocomplétion historique
                     SearchAutocomplete(
                       controller: _locationController,
                       focusNode: _locationFocusNode,
-                      hintText: 'Rechercher une ville...',
+                      hintText: 'Ex: Paris, France',
                       onHistorySelected: _onHistorySelected,
-                      onChanged: (_) {
-                        // Réinitialiser les coordonnées si le texte change
-                        if (_centerLatitude != null) {
-                          setState(() {
-                            _centerLatitude = null;
-                            _centerLongitude = null;
-                          });
-                        }
-                      },
+                      onFieldSubmitted: _searchLocation,
                       isLoading: _isSearchingLocation,
                     ),
                     if (_locationError != null) ...[
                       const SizedBox(height: 8),
                       InlineError(message: _locationError!),
-                    ],
-                    if (_centerLatitude != null && _centerLongitude != null) ...[
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _isLocationFromIp ? Colors.orange.shade50 : Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _isLocationFromIp ? Colors.orange.shade300 : Colors.green.shade200,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.check_circle,
-                              color: _isLocationFromIp ? Colors.orange.shade700 : Colors.green.shade700,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                _isLocationFromIp ? 'Position approximative' : 'Localisation trouvée',
-                                style: const TextStyle(fontSize: 13),
-                              ),
-                            ),
-                            if (_isLocationFromIp)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text(
-                                  'IP',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
                     ],
                     const SizedBox(height: 12),
                     SizedBox(
@@ -564,6 +697,92 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                       ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Section Activités (PREMIER BLOC - avant le rayon)
+              _buildSection(
+                title: 'Activités extérieures',
+                icon: Icons.sports_soccer,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Sélectionnez une ou plusieurs activités',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.darkGray.withOpacity(0.7),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: ActivityType.values
+                          .where((type) => type != ActivityType.other)
+                          .map((activity) => _buildActivityChip(activity))
+                          .toList(),
+                    ),
+                    if (_selectedActivities.isEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Veuillez sélectionner au moins une activité',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.errorRed,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Section Rayon de recherche
+              _buildSection(
+                title: 'Rayon de recherche',
+                icon: Icons.radio_button_checked,
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Text(
+                        '${_searchRadius.toInt()} km',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primaryOrange,
+                          letterSpacing: -1,
+                          shadows: [
+                            Shadow(
+                              color: AppColors.primaryOrange.withOpacity(0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Slider(
+                      value: _searchRadius,
+                      min: 1,
+                      max: 200,
+                      divisions: 40,
+                      activeColor: AppColors.primaryOrange,
+                      inactiveColor: AppColors.mediumGray.withOpacity(0.3),
+                      label: '${_searchRadius.toInt()} km',
+                      onChanged: (value) {
+                        setState(() {
+                          _searchRadius = value;
+                        });
+                      },
                     ),
                   ],
                 ),
@@ -634,6 +853,70 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
                       ],
                     ),
                   ),
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Section Créneaux horaires
+              _buildSection(
+                title: 'Créneaux horaires',
+                icon: Icons.schedule,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Heures à considérer pour l\'analyse météo',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.darkGray.withOpacity(0.7),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: TimeSlot.values.map((slot) {
+                        final isSelected = _selectedTimeSlots.contains(slot);
+                        return FilterChip(
+                          selected: isSelected,
+                          label: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                slot.displayName,
+                                style: const TextStyle(fontWeight: FontWeight.w500),
+                              ),
+                              Text(
+                                slot.timeRange,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isSelected
+                                      ? AppColors.primaryOrange
+                                      : AppColors.darkGray.withOpacity(0.6),
+                                ),
+                              ),
+                            ],
+                          ),
+                          onSelected: (_) => _toggleTimeSlot(slot),
+                          selectedColor: AppColors.primaryOrange.withOpacity(0.2),
+                          checkmarkColor: AppColors.primaryOrange,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        );
+                      }).toList(),
+                    ),
+                    if (_selectedTimeSlots.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Sélectionnez au moins un créneau',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.errorRed,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
 
@@ -742,116 +1025,45 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
               _buildSection(
                 title: 'Conditions météo',
                 icon: Icons.wb_cloudy,
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _availableConditions.map((condition) {
-                    final isSelected = _selectedConditions.contains(condition['value']);
-                    return FilterChip(
-                      selected: isSelected,
-                      label: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(condition['icon'], size: 18),
-                          const SizedBox(width: 4),
-                          Text(condition['label']),
-                        ],
-                      ),
-                      onSelected: (_) => _toggleCondition(condition['value']),
-                      selectedColor: AppColors.primaryOrange.withOpacity(0.2),
-                      checkmarkColor: AppColors.primaryOrange,
-                    );
-                  }).toList(),
-                ),
-              ),
-
-              const SizedBox(height: 8),
-
-              // Section Rayon de recherche
-              _buildSection(
-                title: 'Rayon de recherche',
-                icon: Icons.radio_button_checked,
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        '${_searchRadius.toInt()} km',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primaryOrange,
-                          letterSpacing: -1,
-                          shadows: [
-                            Shadow(
-                              color: AppColors.primaryOrange.withOpacity(0.2),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    Slider(
-                      value: _searchRadius,
-                      min: 0,
-                      max: 200,
-                      divisions: 40,
-                      activeColor: AppColors.primaryOrange,
-                      inactiveColor: AppColors.mediumGray.withOpacity(0.3),
-                      label: '${_searchRadius.toInt()} km',
-                      onChanged: (value) {
-                        setState(() {
-                          _searchRadius = value;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 8),
-              
-              // Section Activités
-              _buildSection(
-                title: 'Activités extérieures',
-                icon: Icons.sports_soccer,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Sélectionnez les activités qui vous intéressent',
-                      style: TextStyle(color: AppColors.darkGray),
-                    ),
-                    const SizedBox(height: 16),
                     Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: _activities.entries.map((entry) {
-                        final activity = entry.key;
-                        final data = entry.value;
-                        final isSelected = _selectedActivities.contains(activity);
-                        final activityEntity = Activity(type: activity, name: activity.name);
-                        
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _availableConditions.map((condition) {
+                        final isSelected = _selectedConditions.contains(condition['value']);
                         return FilterChip(
                           selected: isSelected,
-                          avatar: Icon(
-                            data['icon'],
-                            color: isSelected ? AppColors.white : data['color'],
-                            size: 20,
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(condition['icon'], size: 18),
+                              const SizedBox(width: 4),
+                              Text(condition['label']),
+                            ],
                           ),
-                          label: Text(activityEntity.displayName),
-                          onSelected: (_) => _toggleActivity(activity),
-                          selectedColor: data['color'] as Color,
-                          checkmarkColor: AppColors.white,
+                          onSelected: (_) => _toggleCondition(condition['value']),
+                          selectedColor: AppColors.primaryOrange.withOpacity(0.2),
+                          checkmarkColor: AppColors.primaryOrange,
                         );
                       }).toList(),
                     ),
+                    if (_selectedConditions.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'Sélectionnez au moins une condition',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.errorRed,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 32),
 
               // Bouton de recherche
@@ -871,14 +1083,62 @@ class _SearchAdvancedScreenState extends State<SearchAdvancedScreen> {
                   },
                 ),
               ),
-              
+
               const SizedBox(height: 8),
             ],
           ),
         ),
+          ),
+        ),
       ),
-    ),
-    ),
+    );
+  }
+
+  Widget _buildActivityChip(ActivityType activity) {
+    final isSelected = _selectedActivities.contains(activity);
+    final activityEntity = Activity(type: activity, name: activity.displayName);
+    
+    IconData iconData;
+    switch (activity) {
+      case ActivityType.beach:
+        iconData = Icons.beach_access;
+        break;
+      case ActivityType.hiking:
+        iconData = Icons.hiking;
+        break;
+      case ActivityType.skiing:
+        iconData = Icons.snowboarding;
+        break;
+      case ActivityType.surfing:
+        iconData = Icons.surfing;
+        break;
+      case ActivityType.cycling:
+        iconData = Icons.directions_bike;
+        break;
+      case ActivityType.golf:
+        iconData = Icons.sports_golf;
+        break;
+      case ActivityType.camping:
+        iconData = Icons.camping;
+        break;
+      default:
+        iconData = Icons.sports_soccer;
+    }
+
+    return FilterChip(
+      selected: isSelected,
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(iconData, size: 18),
+          const SizedBox(width: 6),
+          Text(activityEntity.displayName),
+        ],
+      ),
+      onSelected: (_) => _toggleActivity(activity),
+      selectedColor: AppColors.primaryOrange.withOpacity(0.2),
+      checkmarkColor: AppColors.primaryOrange,
+      backgroundColor: AppColors.lightGray.withOpacity(0.5),
     );
   }
 

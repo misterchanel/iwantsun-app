@@ -218,10 +218,10 @@ Système de logging professionnel :
 
 ## 📱 Utilisation
 
-### Mode Recherche Simple
+### Mode Recherche de Destination
 
 1. Ouvrez l'application
-2. Sélectionnez "Recherche Simple"
+2. Sélectionnez "Recherche de Destination"
 3. Définissez vos critères :
    - Température souhaitée
    - Conditions météo
@@ -230,12 +230,11 @@ Système de logging professionnel :
    - Dates de voyage
 4. Consultez les résultats avec météo et hôtels
 
-### Mode Recherche Avancée
+### Mode Recherche d'Activité
 
-1. Sélectionnez "Recherche avec Activités"
-2. En plus des critères simples, ajoutez :
-   - Types d'activités souhaitées (plage, ski, randonnée, etc.)
-3. Obtenez des résultats filtrés par activités disponibles
+1. Sélectionnez "Recherche d'Activité"
+2. Définissez vos critères de recherche (température, localisation, période, etc.)
+3. Obtenez des résultats de destinations ensoleillées correspondant à vos critères
 
 ## 🔐 Sécurité
 

@@ -1,6 +1,7 @@
 import 'package:iwantsun/core/services/cache_service.dart';
 import 'package:iwantsun/core/services/logger_service.dart';
 import 'package:iwantsun/domain/entities/search_params.dart';
+import 'package:iwantsun/domain/entities/search_result.dart';
 
 /// Représente une entrée dans l'historique de recherche
 class SearchHistoryEntry {
@@ -9,6 +10,7 @@ class SearchHistoryEntry {
   final DateTime searchedAt;
   final int resultsCount;
   final String? locationName; // Nom lisible de la localisation
+  final List<SearchResult>? results; // Résultats sauvegardés (Point 12)
 
   const SearchHistoryEntry({
     required this.id,
@@ -16,6 +18,7 @@ class SearchHistoryEntry {
     required this.searchedAt,
     required this.resultsCount,
     this.locationName,
+    this.results,
   });
 
   Map<String, dynamic> toJson() {
@@ -25,6 +28,8 @@ class SearchHistoryEntry {
       'searchedAt': searchedAt.toIso8601String(),
       'resultsCount': resultsCount,
       'locationName': locationName,
+      // Ne pas sauvegarder les résultats dans JSON (trop volumineux)
+      // Ils seront sauvegardés séparément si nécessaire
     };
   }
 
@@ -35,6 +40,7 @@ class SearchHistoryEntry {
       searchedAt: DateTime.parse(json['searchedAt'] as String),
       resultsCount: json['resultsCount'] as int,
       locationName: json['locationName'] as String?,
+      results: null, // Chargé séparément si nécessaire
     );
   }
 
@@ -102,11 +108,12 @@ class SearchHistoryService {
     }
   }
 
-  /// Ajouter une recherche à l'historique
+  /// Ajouter une recherche à l'historique (Point 12 - avec résultats)
   Future<bool> addSearch({
     required SearchParams params,
     required int resultsCount,
     String? locationName,
+    List<SearchResult>? results, // Résultats à sauvegarder (Point 12)
   }) async {
     try {
       final entry = SearchHistoryEntry(
@@ -115,6 +122,7 @@ class SearchHistoryService {
         searchedAt: DateTime.now(),
         resultsCount: resultsCount,
         locationName: locationName,
+        results: results, // Sauvegarder les résultats (Point 12)
       );
 
       final history = await getHistory();

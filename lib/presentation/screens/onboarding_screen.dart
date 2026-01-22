@@ -420,10 +420,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 ),
                 const SizedBox(height: 48),
 
-                // Mode Simple
+                // Mode Destination
                 _buildModeCard(
                   icon: Icons.search,
-                  title: 'Recherche Simple',
+                  title: 'Recherche de Destination',
                   description: 'Trouvez rapidement votre destination idéale en quelques clics',
                   features: [
                     'Sélection de la météo souhaitée',
@@ -438,16 +438,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
                 const SizedBox(height: 24),
 
-                // Mode Avancé
+                // Mode Activité
                 _buildModeCard(
                   icon: Icons.tune,
-                  title: 'Recherche Avancée',
-                  description: 'Planifiez l\'aventure parfaite avec des filtres d\'activités',
+                  title: 'Recherche d\'Activité',
+                  description: 'Trouvez des destinations ensoleillées pour vos activités (même fonctionnalités que la recherche de destination)',
                   features: [
-                    'Tous les critères du mode simple',
-                    'Filtres par activités outdoor',
-                    'Plage, randonnée, ski, surf...',
-                    'Résultats ultra-personnalisés',
+                    'Sélection de la météo souhaitée',
+                    'Choix de la température',
+                    'Rayon de recherche personnalisable',
+                    'Dates de voyage flexibles',
                   ],
                   gradient: const LinearGradient(
                     colors: [AppColors.primaryCoral, AppColors.warmPeach],

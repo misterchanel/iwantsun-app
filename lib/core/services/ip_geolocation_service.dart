@@ -1,7 +1,6 @@
-import 'package:dio/dio.dart';
 import 'package:iwantsun/core/services/cache_service.dart';
 import 'package:iwantsun/core/services/logger_service.dart';
-import 'package:iwantsun/core/network/dio_client.dart';
+import 'package:iwantsun/core/services/firebase_api_service.dart';
 
 /// Résultat de la géolocalisation IP
 class IpGeolocationResult {
@@ -55,18 +54,15 @@ class IpGeolocationResult {
 /// Service de géolocalisation basée sur l'adresse IP
 /// Fallback lorsque le GPS n'est pas disponible ou échoue
 class IpGeolocationService {
-  final Dio _dio;
-  final CacheService _cache;
-  final AppLogger _logger;
-
   // Singleton
   static final IpGeolocationService _instance = IpGeolocationService._internal();
   factory IpGeolocationService() => _instance;
 
-  IpGeolocationService._internal()
-      : _dio = DioClient().dio,
-        _cache = CacheService(),
-        _logger = AppLogger();
+  final FirebaseApiService _firebaseApi = FirebaseApiService();
+  final CacheService _cache = CacheService();
+  final AppLogger _logger = AppLogger();
+
+  IpGeolocationService._internal();
 
   /// Obtenir la localisation via l'IP
   /// Utilise l'API ipapi.co (gratuite, 30,000 requêtes/mois)
@@ -89,19 +85,11 @@ class IpGeolocationService {
         );
       }
 
-      // Appel API ipapi.co
-      final response = await _dio.get(
-        'https://ipapi.co/json/',
-        options: Options(
-          receiveTimeout: const Duration(seconds: 10),
-          sendTimeout: const Duration(seconds: 10),
-          validateStatus: (status) => status != null && status < 500,
-        ),
-      );
+      // Appel via Firebase Function au lieu d'ipapi.co directement
+      final locationJson = await _firebaseApi.getIpLocation();
 
-      if (response.statusCode == 200) {
-        final data = response.data as Map<String, dynamic>;
-        final result = IpGeolocationResult.fromJson(data);
+      if (locationJson != null) {
+        final result = IpGeolocationResult.fromJson(locationJson);
 
         _logger.info('IP geolocation successful: ${result.displayName}');
 
@@ -109,19 +97,8 @@ class IpGeolocationService {
         await _cache.put(cacheKey, result.toJson(), CacheService.locationCacheBox);
 
         return result;
-      } else if (response.statusCode == 429) {
-        _logger.warning('IP geolocation rate limit exceeded');
-        return null;
-      } else {
-        _logger.warning('IP geolocation failed with status ${response.statusCode}');
-        return null;
       }
-    } on DioException catch (e) {
-      _logger.error('DioException during IP geolocation', e);
-      if (e.type == DioExceptionType.connectionTimeout ||
-          e.type == DioExceptionType.receiveTimeout) {
-        _logger.warning('IP geolocation timeout');
-      }
+
       return null;
     } catch (e, stackTrace) {
       _logger.error('Unexpected error during IP geolocation', e, stackTrace);

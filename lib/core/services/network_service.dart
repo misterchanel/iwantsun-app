@@ -9,12 +9,12 @@ class NetworkService {
   /// Vérifie si l'appareil est connecté à Internet
   Future<bool> get isConnected async {
     try {
-      final result = await _connectivity.checkConnectivity();
+      final results = await _connectivity.checkConnectivity();
 
-      final connected = result != ConnectivityResult.none &&
-          (result == ConnectivityResult.mobile ||
-              result == ConnectivityResult.wifi ||
-              result == ConnectivityResult.ethernet);
+      final connected = !results.contains(ConnectivityResult.none) &&
+          (results.contains(ConnectivityResult.mobile) ||
+              results.contains(ConnectivityResult.wifi) ||
+              results.contains(ConnectivityResult.ethernet));
 
       _logger.debug('Network status: ${connected ? "Connected" : "Disconnected"}');
       return connected;
@@ -26,11 +26,11 @@ class NetworkService {
 
   /// Stream pour écouter les changements de connectivité
   Stream<bool> get connectivityStream {
-    return _connectivity.onConnectivityChanged.map((result) {
-      final connected = result != ConnectivityResult.none &&
-          (result == ConnectivityResult.mobile ||
-              result == ConnectivityResult.wifi ||
-              result == ConnectivityResult.ethernet);
+    return _connectivity.onConnectivityChanged.map((results) {
+      final connected = !results.contains(ConnectivityResult.none) &&
+          (results.contains(ConnectivityResult.mobile) ||
+              results.contains(ConnectivityResult.wifi) ||
+              results.contains(ConnectivityResult.ethernet));
 
       _logger.debug('Network status changed: ${connected ? "Connected" : "Disconnected"}');
       return connected;

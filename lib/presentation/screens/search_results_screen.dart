@@ -1,10 +1,13 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:iwantsun/core/theme/app_colors.dart';
 import 'package:iwantsun/core/services/gamification_service.dart';
 import 'package:iwantsun/core/services/analytics_service.dart';
 import 'package:iwantsun/domain/entities/search_result.dart';
+import 'package:iwantsun/domain/entities/activity.dart';
 import 'package:iwantsun/presentation/providers/search_provider.dart';
 import 'package:iwantsun/presentation/providers/search_state.dart';
 import 'package:iwantsun/presentation/widgets/enhanced_loading_indicator.dart';
@@ -191,6 +194,16 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             );
           }
 
+          // État initial - rediriger vers l'accueil
+          if (state is SearchInitial) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                context.go('/home');
+              }
+            });
+            return const StartSearchPrompt();
+          }
+
           // État de succès avec résultats
           if (state is SearchSuccess) {
             // Initialiser le filter provider avec les résultats
@@ -201,8 +214,16 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
             return Consumer<ResultFilterProvider>(
               builder: (context, filterProvider, _) {
-                final resultsToDisplay =
-                    filterProvider.filteredResults ?? state.results;
+                // Utiliser les résultats filtrés s'ils existent et ne sont pas vides,
+                // sinon utiliser les résultats originaux de l'état
+                final filtered = filterProvider.filteredResults;
+                final resultsToDisplay = (filtered != null && filtered.isNotEmpty)
+                    ? filtered
+                    : state.results;
+                
+                // Debug: vérifier le nombre de résultats
+                debugPrint('Results to display: ${resultsToDisplay.length} (original: ${state.results.length}, filtered: ${filtered?.length ?? 0})');
+                
                 return _showMapView
                     ? _buildMapView(context, resultsToDisplay)
                     : _buildSuccessState(context, resultsToDisplay);
@@ -591,6 +612,7 @@ class DestinationResultCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Nom de la ville
                       Text(
                         result.location.name,
                         style: const TextStyle(
@@ -600,12 +622,67 @@ class DestinationResultCard extends StatelessWidget {
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
+                      // Activités si présentes (couples activité/ville)
+                      if (result.activities != null && result.activities!.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: result.activities!.take(3).map((activity) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.white.withOpacity(0.25),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: AppColors.white.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    _getActivityIcon(activity.type),
+                                    size: 12,
+                                    color: AppColors.white,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    activity.displayName,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.white,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        if (result.activities!.length > 3)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '+${result.activities!.length - 3} autre${result.activities!.length - 3 > 1 ? 's' : ''}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.white.withOpacity(0.8),
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                      ],
                       if (result.location.country != null)
-                        Text(
-                          result.location.country!,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppColors.white.withOpacity(0.9),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            result.location.country!,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.white.withOpacity(0.9),
+                            ),
                           ),
                         ),
                       const SizedBox(height: 4),
@@ -618,7 +695,7 @@ class DestinationResultCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 2),
                           Text(
-                            '${result.location.distanceFromCenter?.toStringAsFixed(0) ?? '?'} km',
+                            _getDistanceText(result),
                             style: TextStyle(
                               fontSize: 12,
                               color: AppColors.white.withOpacity(0.85),
@@ -661,6 +738,109 @@ class DestinationResultCard extends StatelessWidget {
     );
   }
 
+  /// Calcule la distance si absente en utilisant les paramètres de recherche
+  String _getDistanceText(SearchResult result) {
+    if (result.location.distanceFromCenter != null) {
+      final distance = result.location.distanceFromCenter!;
+      return distance < 1
+          ? '${(distance * 1000).toStringAsFixed(0)} m'
+          : '${distance.toStringAsFixed(1)} km';
+    }
+    
+    // Calculer la distance côté client si absente
+    final searchProvider = Provider.of<SearchProvider>(context, listen: false);
+    final params = searchProvider.currentParams;
+    
+    if (params != null) {
+      final distance = _calculateHaversineDistance(
+        params.centerLatitude,
+        params.centerLongitude,
+        result.location.latitude,
+        result.location.longitude,
+      );
+      return distance < 1
+          ? '${(distance * 1000).toStringAsFixed(0)} m'
+          : '${distance.toStringAsFixed(1)} km';
+    }
+    
+    return 'Distance non disponible';
+  }
+
+  /// Calcule la distance entre deux points avec la formule de Haversine
+  double _calculateHaversineDistance(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    const double earthRadius = 6371; // km
+    final dLat = _toRadians(lat2 - lat1);
+    final dLon = _toRadians(lon2 - lon1);
+    
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_toRadians(lat1)) *
+            math.cos(_toRadians(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    
+    return earthRadius * c;
+  }
+
+  double _toRadians(double degrees) {
+    return degrees * (3.141592653589793 / 180);
+  }
+
+  /// Formate une plage de dates pour l'affichage (Point 14)
+  String _formatDateRange(DateTime start, DateTime end) {
+    if (start.year == end.year && start.month == end.month && start.day == end.day) {
+      return '${start.day}/${start.month}/${start.year}';
+    }
+    return '${start.day}/${start.month}/${start.year} - ${end.day}/${end.month}/${end.year}';
+  }
+
+  /// Obtient la condition météo dominante (Point 14)
+  String _getDominantCondition(List<String> conditions) {
+    if (conditions.isEmpty) return 'unknown';
+    
+    final conditionCounts = <String, int>{};
+    for (final condition in conditions) {
+      conditionCounts[condition] = (conditionCounts[condition] ?? 0) + 1;
+    }
+    
+    String dominant = 'unknown';
+    int maxCount = 0;
+    conditionCounts.forEach((condition, count) {
+      if (count > maxCount) {
+        maxCount = count;
+        dominant = condition;
+      }
+    });
+    
+    return dominant;
+  }
+
+  IconData _getActivityIcon(ActivityType type) {
+    switch (type) {
+      case ActivityType.beach:
+        return Icons.beach_access;
+      case ActivityType.hiking:
+        return Icons.hiking;
+      case ActivityType.skiing:
+        return Icons.snowboarding;
+      case ActivityType.surfing:
+        return Icons.surfing;
+      case ActivityType.cycling:
+        return Icons.directions_bike;
+      case ActivityType.golf:
+        return Icons.sports_golf;
+      case ActivityType.camping:
+        return Icons.camping;
+      default:
+        return Icons.sports_soccer;
+    }
+  }
+
   Widget _buildScoreBadge() {
     final score = result.overallScore;
     final percentage = score.clamp(0.0, 100.0).toInt();
@@ -674,41 +854,67 @@ class DestinationResultCard extends StatelessWidget {
       scoreColor = const Color(0xFFF44336);
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            '$percentage%',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: scoreColor,
+    // Tooltip avec décomposition du score (Point 24)
+    return Tooltip(
+      message: _buildScoreTooltip(),
+      preferBelow: false,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
             ),
-          ),
-          Text(
-            'Score',
-            style: TextStyle(
-              fontSize: 9,
-              color: AppColors.darkGray.withOpacity(0.7),
-              fontWeight: FontWeight.w600,
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '$percentage%',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: scoreColor,
+              ),
             ),
-          ),
-        ],
+            Text(
+              'Score',
+              style: TextStyle(
+                fontSize: 9,
+                color: AppColors.darkGray.withOpacity(0.7),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  /// Construit le tooltip avec la décomposition du score (Point 24)
+  String _buildScoreTooltip() {
+    final weatherScore = result.weatherForecast.weatherScore;
+    final activityScore = result.activityScore;
+    
+    String tooltip = 'Score global : ${result.overallScore.toStringAsFixed(0)}%\n\n';
+    tooltip += 'Décomposition :\n';
+    tooltip += '• Score météo : ${weatherScore.toStringAsFixed(0)}%\n';
+    
+    if (activityScore != null) {
+      tooltip += '• Score activités : ${activityScore.toStringAsFixed(0)}%\n';
+    }
+    
+    tooltip += '\nLe score météo combine :\n';
+    tooltip += '- Température (35%)\n';
+    tooltip += '- Conditions (50%)\n';
+    tooltip += '- Stabilité (15%)';
+    
+    return tooltip;
   }
 
   Widget _buildWeatherSection(BuildContext context) {
@@ -716,6 +922,9 @@ class DestinationResultCard extends StatelessWidget {
     final conditionText = _getConditionText(forecast.forecasts.isNotEmpty
         ? forecast.forecasts.first.condition
         : 'unknown');
+    
+    // Afficher le score d'activité si disponible (Point 4)
+    final hasActivityScore = result.activityScore != null;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -784,6 +993,40 @@ class DestinationResultCard extends StatelessWidget {
               ),
             ],
           ),
+          // Score d'activité si disponible (Point 4)
+          if (hasActivityScore) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.primaryOrange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: AppColors.primaryOrange.withOpacity(0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.sports_soccer,
+                    size: 16,
+                    color: AppColors.primaryOrange,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Score activités : ${result.activityScore!.toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primaryOrange,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           // Ligne 2 : Boutons Booking et Partager
           Row(
@@ -858,10 +1101,19 @@ class DestinationResultCard extends StatelessWidget {
   Future<void> _openBooking(BuildContext context) async {
     // Récupérer les dates depuis les prévisions météo
     final forecasts = result.weatherForecast.forecasts;
-    final checkIn = forecasts.isNotEmpty ? forecasts.first.date : DateTime.now().add(const Duration(days: 1));
-    final checkOut = forecasts.isNotEmpty ? forecasts.last.date.add(const Duration(days: 1)) : DateTime.now().add(const Duration(days: 8));
+    
+    // Utiliser UTC pour éviter les problèmes de timezone
+    final now = DateTime.now().toUtc();
+    final checkIn = forecasts.isNotEmpty 
+        ? forecasts.first.date.toUtc()
+        : now.add(const Duration(days: 1));
+    final checkOut = forecasts.isNotEmpty && forecasts.length > 1
+        ? forecasts.last.date.toUtc().add(const Duration(days: 1))
+        : (forecasts.isNotEmpty 
+            ? forecasts.first.date.toUtc().add(const Duration(days: 1))
+            : now.add(const Duration(days: 8)));
 
-    // Formater les dates pour Booking.com (YYYY-MM-DD)
+    // Formater les dates pour Booking.com (YYYY-MM-DD) en UTC pour cohérence
     final checkInStr = '${checkIn.year}-${checkIn.month.toString().padLeft(2, '0')}-${checkIn.day.toString().padLeft(2, '0')}';
     final checkOutStr = '${checkOut.year}-${checkOut.month.toString().padLeft(2, '0')}-${checkOut.day.toString().padLeft(2, '0')}';
 
@@ -893,13 +1145,43 @@ class DestinationResultCard extends StatelessWidget {
     final country = result.location.country ?? '';
     final score = result.overallScore.clamp(0.0, 100.0).toInt();
     final temp = result.weatherForecast.averageTemperature.toStringAsFixed(1);
+    final forecasts = result.weatherForecast.forecasts;
+    
+    // Dates de voyage (Point 14)
+    String datesText = '';
+    if (forecasts.isNotEmpty) {
+      final startDate = forecasts.first.date;
+      final endDate = forecasts.length > 1 
+          ? forecasts.last.date 
+          : forecasts.first.date;
+      datesText = '\n📅 ${_formatDateRange(startDate, endDate)}\n';
+    }
+    
+    // Conditions météo dominantes (Point 14)
+    String conditionsText = '';
+    if (forecasts.isNotEmpty) {
+      final dominantCondition = _getDominantCondition(forecasts.map((f) => f.condition).toList());
+      conditionsText = '☀️ Conditions : ${_getConditionText(dominantCondition)}\n';
+    }
+    
+    // Activités si disponibles (Point 14)
+    String activitiesText = '';
+    if (result.activities != null && result.activities!.isNotEmpty) {
+      final activityNames = result.activities!.take(3).map((a) => a.displayName).join(', ');
+      activitiesText = '🎯 Activités : $activityNames\n';
+    }
 
-    final shareText = '🌟 Découvrez $locationName$country !\n\n'
-        'Score de compatibilité : $score%\n'
-        'Température moyenne : ${temp}°C\n\n'
-        'Trouvé via IWantSun 🌞';
+    // Texte de partage amélioré (Point 14)
+    final shareText = '🌟 Découvrez $locationName${country.isNotEmpty ? ', $country' : ''} !\n\n'
+        '⭐ Score de compatibilité : $score%\n'
+        '🌡️ Température moyenne : ${temp}°C\n'
+        '$conditionsText'
+        '$activitiesText'
+        '$datesText'
+        '\nTrouvé via IWantSun 🌞\n'
+        '#IWantSun #Voyage #Météo';
 
-    await Share.share(shareText);
+    await SharePlus.instance.share(ShareParams(text: shareText));
 
     // Enregistrer le partage dans la gamification
     try {
