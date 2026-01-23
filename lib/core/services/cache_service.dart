@@ -168,13 +168,24 @@ class CacheService {
       for (var key in box.keys) {
         final entry = box.get(key) as Map<dynamic, dynamic>?;
         if (entry != null) {
-          final lastAccessed = DateTime.parse(
-            entry['lastAccessed'] as String? ?? entry['timestamp'] as String,
-          );
-
-          if (oldestTime == null || lastAccessed.isBefore(oldestTime)) {
-            oldestTime = lastAccessed;
-            oldestKey = key as String;
+          try {
+            final lastAccessedStr = entry['lastAccessed'] as String? ?? entry['timestamp'] as String?;
+            if (lastAccessedStr == null || lastAccessedStr is! String) {
+              // Entrée invalide, la supprimer
+              await box.delete(key);
+              _logger.warning('Invalid lastAccessed/timestamp for key: $key in box: $boxName, deleting');
+              continue;
+            }
+            
+            final lastAccessed = DateTime.parse(lastAccessedStr);
+            if (oldestTime == null || lastAccessed.isBefore(oldestTime)) {
+              oldestTime = lastAccessed;
+              oldestKey = key as String;
+            }
+          } catch (e) {
+            // Timestamp invalide, supprimer l'entrée
+            _logger.warning('Invalid timestamp format for key: $key in box: $boxName, deleting', e);
+            await box.delete(key);
           }
         }
       }
@@ -257,8 +268,21 @@ class CacheService {
       for (var key in box.keys) {
         final entry = box.get(key) as Map<dynamic, dynamic>?;
         if (entry != null) {
-          final timestamp = DateTime.parse(entry['timestamp'] as String);
-          if (DateTime.now().difference(timestamp).inHours > expiryHours) {
+          final timestampStr = entry['timestamp'];
+          if (timestampStr == null || timestampStr is! String) {
+            // Entrée invalide, la supprimer
+            keysToDelete.add(key as String);
+            continue;
+          }
+          
+          try {
+            final timestamp = DateTime.parse(timestampStr);
+            if (DateTime.now().difference(timestamp).inHours > expiryHours) {
+              keysToDelete.add(key as String);
+            }
+          } catch (e) {
+            // Timestamp invalide, supprimer l'entrée
+            _logger.warning('Invalid timestamp format for key: $key in box: $boxName, deleting', e);
             keysToDelete.add(key as String);
           }
         }

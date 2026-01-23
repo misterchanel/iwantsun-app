@@ -5,7 +5,11 @@ import 'package:latlong2/latlong.dart';
 import 'package:iwantsun/core/theme/app_colors.dart';
 import 'package:iwantsun/core/animations/list_animations.dart';
 import 'package:iwantsun/domain/entities/favorite.dart';
+import 'package:iwantsun/domain/entities/event_favorite.dart';
+import 'package:iwantsun/domain/entities/event.dart';
 import 'package:iwantsun/presentation/providers/favorites_provider.dart';
+import 'package:iwantsun/presentation/widgets/event_favorite_button.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:iwantsun/presentation/widgets/empty_state.dart';
 import 'package:iwantsun/presentation/widgets/loading_indicator.dart';
 import 'package:iwantsun/presentation/widgets/animated_card.dart';
@@ -23,13 +27,15 @@ class _FavoritesScreenEnhancedState extends State<FavoritesScreenEnhanced>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   FavoritesSortOption _sortOption = FavoritesSortOption.dateDesc;
+  EventFavoritesSortOption _eventSortOption = EventFavoritesSortOption.dateDesc;
   String? _selectedCountry;
+  EventType? _selectedEventType;
   bool _showMap = false;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
 
     // Charger les données
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -64,6 +70,7 @@ class _FavoritesScreenEnhancedState extends State<FavoritesScreenEnhanced>
                   controller: _tabController,
                   children: [
                     _buildFavoritesTab(),
+                    _buildEventFavoritesTab(),
                     _buildStatisticsTab(),
                   ],
                 ),
@@ -119,13 +126,16 @@ class _FavoritesScreenEnhancedState extends State<FavoritesScreenEnhanced>
                       ),
                     ),
                     Consumer<FavoritesProvider>(
-                      builder: (context, provider, _) => Text(
-                        '${provider.favoritesCount} destination${provider.favoritesCount > 1 ? 's' : ''} sauvegardée${provider.favoritesCount > 1 ? 's' : ''}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.white.withOpacity(0.9),
-                        ),
-                      ),
+                      builder: (context, provider, _) {
+                        final totalCount = provider.favoritesCount + provider.eventFavoritesCount;
+                        return Text(
+                          '$totalCount favori${totalCount > 1 ? 's' : ''} (${provider.favoritesCount} destinations, ${provider.eventFavoritesCount} événements)',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -141,7 +151,8 @@ class _FavoritesScreenEnhancedState extends State<FavoritesScreenEnhanced>
   Widget _buildHeaderActions() {
     return Consumer<FavoritesProvider>(
       builder: (context, provider, _) {
-        if (provider.favorites.isEmpty) return const SizedBox.shrink();
+        final hasAnyFavorites = provider.favorites.isNotEmpty || provider.eventFavorites.isNotEmpty;
+        if (!hasAnyFavorites) return const SizedBox.shrink();
 
         return Row(
           children: [
@@ -414,6 +425,508 @@ class _FavoritesScreenEnhancedState extends State<FavoritesScreenEnhanced>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildEventFavoritesTab() {
+    return Consumer<FavoritesProvider>(
+      builder: (context, provider, _) {
+        if (provider.isLoadingEventFavorites) {
+          return const Center(child: LoadingIndicator());
+        }
+
+        if (provider.eventFavoritesError != null) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, size: 64, color: AppColors.errorRed),
+                const SizedBox(height: 16),
+                Text(
+                  provider.eventFavoritesError!,
+                  style: TextStyle(color: AppColors.errorRed),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => provider.loadEventFavorites(),
+                  child: const Text('Réessayer'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final displayedFavorites = _getFilteredEventFavorites(provider);
+
+        if (displayedFavorites.isEmpty) {
+          return EmptyState(
+            icon: Icons.event_busy,
+            title: 'Aucun événement favori',
+            message: 'Ajoutez des événements à vos favoris depuis les résultats de recherche',
+          );
+        }
+
+        return Column(
+          children: [
+            // Barre de filtres et tri
+            _buildEventFavoritesToolbar(provider),
+            // Liste des favoris
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: displayedFavorites.length,
+                itemBuilder: (context, index) {
+                  return AnimatedCard(
+                    child: _buildEventFavoriteCard(context, displayedFavorites[index], provider),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  List<EventFavorite> _getFilteredEventFavorites(FavoritesProvider provider) {
+    var favorites = provider.eventFavorites;
+
+    // Appliquer le tri
+    provider.sortEventFavorites(_eventSortOption);
+
+    // Filtrer par type
+    if (_selectedEventType != null) {
+      favorites = provider.filterEventFavoritesByType(_selectedEventType);
+    }
+
+    // Filtrer par pays
+    if (_selectedCountry != null) {
+      favorites = provider.filterEventFavoritesByCountry(_selectedCountry);
+    }
+
+    return favorites;
+  }
+
+  Widget _buildEventFavoritesToolbar(FavoritesProvider provider) {
+    if (provider.eventFavorites.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: PopupMenuButton<EventFavoritesSortOption>(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.mediumGray),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(_eventSortOption.icon, size: 16),
+                    const SizedBox(width: 8),
+                    Text(_eventSortOption.label),
+                    const Icon(Icons.arrow_drop_down, size: 16),
+                  ],
+                ),
+              ),
+              onSelected: (option) {
+                setState(() => _eventSortOption = option);
+              },
+              itemBuilder: (context) => EventFavoritesSortOption.values
+                  .map((option) => PopupMenuItem(
+                        value: option,
+                        child: Row(
+                          children: [
+                            Icon(option.icon, size: 16),
+                            const SizedBox(width: 8),
+                            Text(option.label),
+                          ],
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          PopupMenuButton<EventType?>(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppColors.mediumGray),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _selectedEventType?.icon ?? Icons.filter_list,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(_selectedEventType?.displayName ?? 'Tous types'),
+                  const Icon(Icons.arrow_drop_down, size: 16),
+                ],
+              ),
+            ),
+            onSelected: (type) {
+              setState(() => _selectedEventType = type);
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: null,
+                child: Text('Tous types'),
+              ),
+              const PopupMenuDivider(),
+              ...EventType.values.map((type) => PopupMenuItem(
+                    value: type,
+                    child: Row(
+                      children: [
+                        Icon(type.icon, size: 16),
+                        const SizedBox(width: 8),
+                        Text(type.displayName),
+                      ],
+                    ),
+                  )),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEventFavoriteCard(
+    BuildContext context,
+    EventFavorite favorite,
+    FavoritesProvider provider,
+  ) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 4,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: InkWell(
+        onTap: () => _openEventFavoriteDetails(context, favorite),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryOrange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      favorite.eventType.icon,
+                      color: AppColors.primaryOrange,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          favorite.eventName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          favorite.eventType.displayName,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.darkGray,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  EventFavoriteButton(
+                    event: favorite.toEvent(),
+                    size: 24,
+                    activeColor: AppColors.errorRed,
+                    inactiveColor: AppColors.mediumGray,
+                  ),
+                ],
+              ),
+              if (favorite.description != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  favorite.description!,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textDark,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(
+                    Icons.calendar_today,
+                    size: 16,
+                    color: AppColors.mediumGray,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    favorite.dateDisplay,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.darkGray,
+                    ),
+                  ),
+                  const Spacer(),
+                  _buildEventStatusBadge(favorite),
+                ],
+              ),
+              if (favorite.locationName != null || favorite.city != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.location_on,
+                      size: 16,
+                      color: AppColors.mediumGray,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        favorite.locationName ?? favorite.city ?? '',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.darkGray,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (favorite.price != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.euro,
+                      size: 16,
+                      color: AppColors.primaryOrange,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'À partir de ${favorite.price!.toStringAsFixed(0)} ${favorite.priceCurrency ?? '€'}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primaryOrange,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (favorite.notes != null && favorite.notes!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.lightBeige,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.note,
+                        size: 16,
+                        color: AppColors.mediumGray,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          favorite.notes!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.darkGray,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEventStatusBadge(EventFavorite favorite) {
+    String label;
+    Color color;
+    IconData icon;
+
+    if (favorite.isUpcoming) {
+      label = 'À venir';
+      color = Colors.blue;
+      icon = Icons.schedule;
+    } else if (favorite.isOngoing) {
+      label = 'En cours';
+      color = Colors.green;
+      icon = Icons.play_circle_outline;
+    } else {
+      label = 'Terminé';
+      color = AppColors.mediumGray;
+      icon = Icons.check_circle_outline;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openEventFavoriteDetails(BuildContext context, EventFavorite favorite) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(favorite.eventName),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildDetailRow(Icons.category, 'Type', favorite.eventType.displayName),
+              _buildDetailRow(Icons.calendar_today, 'Date', favorite.dateDisplay),
+              if (favorite.locationName != null)
+                _buildDetailRow(Icons.location_on, 'Lieu', favorite.locationName!),
+              if (favorite.city != null)
+                _buildDetailRow(Icons.location_city, 'Ville', favorite.city!),
+              if (favorite.country != null)
+                _buildDetailRow(Icons.public, 'Pays', favorite.country!),
+              if (favorite.price != null)
+                _buildDetailRow(
+                  Icons.euro,
+                  'Prix',
+                  '${favorite.price!.toStringAsFixed(2)} ${favorite.priceCurrency ?? 'EUR'}',
+                ),
+              if (favorite.description != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Description',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(favorite.description!),
+              ],
+              if (favorite.notes != null && favorite.notes!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Mes notes',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  favorite.notes!,
+                  style: TextStyle(fontStyle: FontStyle.italic),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          if (favorite.websiteUrl != null)
+            TextButton.icon(
+              onPressed: () async {
+                final uri = Uri.parse(favorite.websiteUrl!);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Voir plus'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: AppColors.mediumGray),
+          const SizedBox(width: 8),
+          Text(
+            '$label: ',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(fontSize: 13),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

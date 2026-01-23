@@ -9,14 +9,26 @@ const OVERPASS_SERVERS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass.openstreetmap.ru/api/interpreter",
-  // Retiré : overpass-api.openstreetmap.fr (DNS error constant)
-  // Retiré : overpass.nchc.org.tw (DNS error constant)
+  "https://overpass.openstreetmap.fr/api/interpreter", // Ajouté - France
+  "https://overpass.nchc.org.tw/api/interpreter", // Ajouté - Taïwan (retesté)
+  // Note: Certains serveurs peuvent être temporairement indisponibles
 ];
+
+const MAX_RETRIES_PER_SERVER = 2; // 3 tentatives au total (1 initiale + 2 retries)
+const RETRY_BACKOFF_MS = 1000; // Délai initial de 1 seconde
+const MAX_RETRY_DELAY_MS = 5000; // Délai maximum de 5 secondes
 
 const OPEN_METEO_API_URL = "https://api.open-meteo.com/v1/forecast";
 const MAX_CITIES_TO_PROCESS = 60;
 const CACHE_DURATION_HOURS = 24;
 const MAX_SEARCH_RADIUS_KM = 200;
+
+// APIs d'événements
+const TICKETMASTER_API_URL = "https://app.ticketmaster.com/discovery/v2/events.json";
+const TICKETMASTER_API_KEY = process.env.TICKETMASTER_API_KEY || ""; // À configurer dans Firebase
+const OPENEVENTDATABASE_API_URL = "https://api.openeventdatabase.org/event";
+const EVENTBRITE_API_URL = "https://www.eventbriteapi.com/v3/events/search/";
+const EVENTBRITE_API_KEY = process.env.EVENTBRITE_API_KEY || ""; // À configurer dans Firebase
 
 // Types
 interface SearchParams {
@@ -102,18 +114,30 @@ export const searchDestinations = onCall(
 
     try {
       // 1. Get cities
-      const cities = await getCitiesFromOverpass(
-        data.centerLatitude,
-        data.centerLongitude,
-        Math.min(data.searchRadius, MAX_SEARCH_RADIUS_KM)
-      );
+      let cities: City[];
+      try {
+        cities = await getCitiesFromOverpass(
+          data.centerLatitude,
+          data.centerLongitude,
+          Math.min(data.searchRadius, MAX_SEARCH_RADIUS_KM)
+        );
+      } catch (overpassError: any) {
+        // Erreur Overpass - retourner message d'erreur spécifique
+        const errorMsg = overpassError?.message || String(overpassError);
+        console.error("Overpass API error:", errorMsg);
+        return {
+          results: [],
+          error: "Les serveurs de données géographiques sont temporairement indisponibles. Veuillez réessayer dans quelques instants. Si le problème persiste, essayez d'élargir votre zone de recherche."
+        };
+      }
+      
       console.log(`Found ${cities.length} cities in ${Date.now() - startTime}ms`);
 
       if (cities.length === 0) {
         console.warn("No cities found in the search radius");
         return { 
           results: [], 
-          error: "Les serveurs de données géographiques sont temporairement indisponibles. Veuillez réessayer dans quelques instants. Si le problème persiste, essayez d'élargir votre zone de recherche." 
+          error: "Aucune ville trouvée dans la zone de recherche. Essayez d'élargir le rayon de recherche ou de choisir une autre localisation."
         };
       }
 
@@ -286,7 +310,9 @@ async function getCitiesFromOverpass(
   lon: number,
   radiusKm: number
 ): Promise<City[]> {
-  const cacheKey = `cities_${lat.toFixed(2)}_${lon.toFixed(2)}_${Math.round(radiusKm)}`;
+  // Utiliser une précision plus fine pour éviter les collisions de cache
+  // 6 décimales = précision ~11 cm, rayon avec 1 décimale = précision 100m
+  const cacheKey = `cities_${lat.toFixed(6)}_${lon.toFixed(6)}_${radiusKm.toFixed(1)}`;
   const cacheRef = db.collection("cache_cities").doc(cacheKey);
   const cached = await cacheRef.get();
 
@@ -294,13 +320,59 @@ async function getCitiesFromOverpass(
 
   if (cached.exists) {
     const data = cached.data();
-    if (data && Date.now() - data.timestamp < CACHE_DURATION_HOURS * 3600000) {
-      console.log("Cache hit for cities");
-      return data.cities as City[];
-    } else if (data && data.cities) {
-      // Cache expiré : sauvegarder pour fallback
-      expiredCities = data.cities as City[];
-      console.log(`Cache expired but available for fallback (${expiredCities.length} cities)`);
+    if (!data) {
+      console.warn("Cache exists but data is null");
+    } else {
+      // Vérifier la cohérence du cache : le centre doit être proche (tolérance 100m)
+      const cachedCenterLat = data.centerLatitude as number | undefined;
+      const cachedCenterLon = data.centerLongitude as number | undefined;
+      const cachedRadiusKm = data.radiusKm as number | undefined;
+      
+      let cacheValid = true;
+      if (cachedCenterLat !== undefined && cachedCenterLon !== undefined) {
+        const centerDistance = calculateDistance(lat, lon, cachedCenterLat, cachedCenterLon);
+        // Tolérance de 100 mètres (0.1 km)
+        if (centerDistance > 0.1) {
+          console.warn(`Cache center mismatch: ${centerDistance.toFixed(3)}km difference (cached: ${cachedCenterLat}, ${cachedCenterLon}, current: ${lat}, ${lon}). Ignoring cache.`);
+          cacheValid = false;
+        }
+      }
+      
+      // Vérifier que le rayon est similaire (tolérance 1 km)
+      if (cacheValid && cachedRadiusKm !== undefined) {
+        const radiusDiff = Math.abs(cachedRadiusKm - radiusKm);
+        if (radiusDiff > 1.0) {
+          console.warn(`Cache radius mismatch: ${radiusDiff.toFixed(1)}km difference (cached: ${cachedRadiusKm}, current: ${radiusKm}). Ignoring cache.`);
+          cacheValid = false;
+        }
+      }
+      
+      if (cacheValid && data.cities && Date.now() - data.timestamp < CACHE_DURATION_HOURS * 3600000) {
+        const cachedCities = data.cities as City[];
+        // IMPORTANT: Re-filtrer et re-calculer les distances par rapport au centre actuel
+        // car le cache peut contenir des villes d'une recherche précédente avec un centre légèrement différent
+        const filteredCities = cachedCities
+          .map(city => {
+            const distance = calculateDistance(lat, lon, city.latitude, city.longitude);
+            return { ...city, distance };
+          })
+          .filter(city => city.distance <= radiusKm)
+          .sort((a, b) => a.distance - b.distance);
+        
+        console.log(`Cache hit for cities: ${filteredCities.length} cities after re-filtering (from ${cachedCities.length} cached)`);
+        return filteredCities;
+      } else if (cacheValid && data.cities) {
+        // Cache expiré : sauvegarder pour fallback, mais aussi re-filtrer
+        const cachedCities = data.cities as City[];
+        expiredCities = cachedCities
+          .map(city => {
+            const distance = calculateDistance(lat, lon, city.latitude, city.longitude);
+            return { ...city, distance };
+          })
+          .filter(city => city.distance <= radiusKm)
+          .sort((a, b) => a.distance - b.distance);
+        console.log(`Cache expired but available for fallback: ${expiredCities.length} cities after re-filtering (from ${cachedCities.length} cached)`);
+      }
     }
   }
 
@@ -318,10 +390,20 @@ out center;
 `;
 
   const errors: string[] = [];
-  for (const serverUrl of OVERPASS_SERVERS) {
+  
+  // Fonction helper pour retry avec backoff exponentiel
+  const tryOverpassServer = async (serverUrl: string, retryCount: number = 0): Promise<City[] | null> => {
     try {
-      console.log(`Trying Overpass server: ${serverUrl}`);
-      // Timeout plus long pour le serveur de fallback (kumi.systems)
+      const attempt = retryCount + 1;
+      if (retryCount > 0) {
+        const delay = Math.min(RETRY_BACKOFF_MS * Math.pow(2, retryCount - 1), MAX_RETRY_DELAY_MS);
+        console.log(`Retrying Overpass server ${serverUrl} (attempt ${attempt}/${MAX_RETRIES_PER_SERVER + 1}) after ${delay}ms delay`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        console.log(`Trying Overpass server: ${serverUrl}`);
+      }
+      
+      // Timeout plus long pour certains serveurs
       const timeout = serverUrl.includes('kumi.systems') ? 30000 : 20000;
       const response = await axios.post(serverUrl, query, {
         headers: { "Content-Type": "text/plain" },
@@ -360,28 +442,71 @@ out center;
       cities.sort((a, b) => a.distance - b.distance);
 
       if (cities.length > 0) {
-        await cacheRef.set({ cities, timestamp: Date.now() });
-        console.log(`Successfully fetched ${cities.length} cities from ${serverUrl}`);
+        // Stocker le centre et le rayon dans le cache pour validation future
+        await cacheRef.set({ 
+          cities, 
+          centerLatitude: lat,
+          centerLongitude: lon,
+          radiusKm: radiusKm,
+          timestamp: Date.now() 
+        });
+        console.log(`Successfully fetched ${cities.length} cities from ${serverUrl}${retryCount > 0 ? ` (after ${retryCount} retries)` : ''}`);
         return cities;
       } else {
         console.warn(`Server ${serverUrl} returned empty results`);
+        return null;
       }
     } catch (error: any) {
       const errorMsg = error?.message || String(error);
-      errors.push(`${serverUrl}: ${errorMsg}`);
-      console.warn(`Overpass server ${serverUrl} failed: ${errorMsg}`);
+      const statusCode = error?.response?.status;
+      const fullError = statusCode ? `${errorMsg} (${statusCode})` : errorMsg;
+      
+      // Retry si erreur temporaire (timeout, 5xx, 429) et qu'on n'a pas atteint le max
+      const isRetryable = retryCount < MAX_RETRIES_PER_SERVER && (
+        error?.code === 'ECONNABORTED' || // Timeout
+        statusCode >= 500 || // Erreur serveur
+        statusCode === 429 || // Rate limit
+        statusCode === 504 // Gateway timeout
+      );
+      
+      if (isRetryable) {
+        console.warn(`Overpass server ${serverUrl} failed (attempt ${retryCount + 1}): ${fullError}. Will retry...`);
+        return tryOverpassServer(serverUrl, retryCount + 1);
+      } else {
+        console.warn(`Overpass server ${serverUrl} failed (final): ${fullError}`);
+        errors.push(`${serverUrl}: ${fullError}`);
+        return null;
+      }
+    }
+  };
+
+  // Essayer chaque serveur avec retry
+  for (const serverUrl of OVERPASS_SERVERS) {
+    const result = await tryOverpassServer(serverUrl);
+    if (result && result.length > 0) {
+      return result;
     }
   }
 
   // Si tous les serveurs ont échoué, utiliser le cache expiré si disponible
+  // (déjà re-filtré dans le bloc précédent)
   if (expiredCities && expiredCities.length > 0) {
-    console.warn(`All Overpass servers failed. Using expired cache with ${expiredCities.length} cities. Errors: ${errors.join('; ')}`);
+    // Mettre à jour le timestamp du cache expiré pour éviter de le réutiliser immédiatement
+    await cacheRef.set({ 
+      cities: expiredCities, 
+      centerLatitude: lat,
+      centerLongitude: lon,
+      radiusKm: radiusKm,
+      timestamp: Date.now() 
+    });
+    console.warn(`All Overpass servers failed. Using expired cache with ${expiredCities.length} cities (already filtered, timestamp updated). Errors: ${errors.join('; ')}`);
     return expiredCities;
   }
 
-  // Si pas de cache expiré, retourner vide
+  // Si pas de cache expiré, retourner vide avec message d'erreur détaillé
+  const errorMessage = `Tous les serveurs Overpass sont temporairement indisponibles. Veuillez réessayer dans quelques instants. Erreurs: ${errors.join('; ')}`;
   console.error(`All Overpass servers failed. No cache available. Errors: ${errors.join('; ')}`);
-  return [];
+  throw new Error(errorMessage);
 }
 
 /**
@@ -1031,6 +1156,662 @@ export const calculateAverageTemperature = onCall(
     }
   }
 );
+
+/**
+ * Recherche d'événements dans une zone géographique
+ */
+interface EventSearchParams {
+  centerLatitude: number;
+  centerLongitude: number;
+  searchRadius: number;
+  startDate: string;
+  endDate: string;
+  eventTypes: string[]; // Types d'événements recherchés
+  minPrice?: number; // Prix minimum (optionnel)
+  maxPrice?: number; // Prix maximum (optionnel)
+  sortByPopularity?: boolean; // Trier par popularité (optionnel)
+}
+
+interface Event {
+  id: string;
+  name: string;
+  description?: string;
+  type: string;
+  latitude: number;
+  longitude: number;
+  startDate: string;
+  endDate?: string;
+  locationName?: string;
+  city?: string;
+  country?: string;
+  distanceFromCenter: number;
+  imageUrl?: string;
+  websiteUrl?: string;
+  price?: number;
+  priceCurrency?: string;
+}
+
+export const searchEvents = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+  },
+  async (request) => {
+    const data = request.data as EventSearchParams;
+
+    // Validation
+    if (data.searchRadius <= 0 || data.searchRadius > MAX_SEARCH_RADIUS_KM) {
+      return { events: [], error: "Invalid search radius" };
+    }
+
+    const startDate = new Date(data.startDate);
+    const endDate = new Date(data.endDate);
+    if (startDate > endDate) {
+      return { events: [], error: "startDate must be before endDate" };
+    }
+
+    console.log("Event search request received:", JSON.stringify(data));
+
+    try {
+      // Vérifier le cache
+      const cacheKey = `events_${data.centerLatitude.toFixed(6)}_${data.centerLongitude.toFixed(6)}_${data.searchRadius.toFixed(1)}_${startDate.toISOString().split('T')[0]}_${endDate.toISOString().split('T')[0]}_${data.eventTypes.sort().join(',')}`;
+      const cacheRef = db.collection("cache_events").doc(cacheKey);
+      const cached = await cacheRef.get();
+
+      if (cached.exists) {
+        const cacheData = cached.data();
+        if (cacheData && Date.now() - cacheData.timestamp < CACHE_DURATION_HOURS * 3600000) {
+          console.log("Cache hit for events");
+          return { events: cacheData.events as Event[], error: null };
+        }
+      }
+
+      const events: Event[] = [];
+      const eventTypes = data.eventTypes.length > 0 ? data.eventTypes : [];
+      
+      // 1. Rechercher dans Ticketmaster (si clé API disponible)
+      if (TICKETMASTER_API_KEY) {
+        try {
+          const ticketmasterEvents = await searchTicketmasterEvents(data, startDate, endDate, eventTypes);
+          events.push(...ticketmasterEvents);
+          console.log(`Found ${ticketmasterEvents.length} events from Ticketmaster`);
+        } catch (error: any) {
+          console.warn(`Ticketmaster API error: ${error.message}`);
+        }
+      } else {
+        console.log("Ticketmaster API key not configured, skipping");
+      }
+      
+      // 2. Rechercher dans OpenEventDatabase
+      try {
+        const openDataEvents = await searchOpenEventDatabase(data, startDate, endDate, eventTypes);
+        events.push(...openDataEvents);
+        console.log(`Found ${openDataEvents.length} events from OpenEventDatabase`);
+      } catch (error: any) {
+        console.warn(`OpenEventDatabase API error: ${error.message}`);
+      }
+      
+      // 3. Rechercher dans Eventbrite (si clé API disponible)
+      if (EVENTBRITE_API_KEY) {
+        try {
+          const eventbriteEvents = await searchEventbriteEvents(data, startDate, endDate, eventTypes);
+          events.push(...eventbriteEvents);
+          console.log(`Found ${eventbriteEvents.length} events from Eventbrite`);
+        } catch (error: any) {
+          console.warn(`Eventbrite API error: ${error.message}`);
+        }
+      } else {
+        console.log("Eventbrite API key not configured, skipping");
+      }
+      
+      // 4. Filtrer par distance et dédupliquer
+      const filteredEvents = events
+        .filter(event => {
+          const distance = calculateDistance(
+            data.centerLatitude,
+            data.centerLongitude,
+            event.latitude,
+            event.longitude
+          );
+          return distance <= data.searchRadius;
+        })
+        .map(event => {
+          const distance = calculateDistance(
+            data.centerLatitude,
+            data.centerLongitude,
+            event.latitude,
+            event.longitude
+          );
+          return { ...event, distanceFromCenter: distance };
+        });
+      
+      // Dédupliquer par ID
+      const uniqueEvents = Array.from(
+        new Map(filteredEvents.map(event => [event.id, event])).values()
+      );
+      
+      // Filtrer par prix si spécifié
+      const priceFilteredEvents = uniqueEvents.filter(event => {
+        if (data.minPrice !== undefined && (event.price === undefined || event.price < data.minPrice)) {
+          return false;
+        }
+        if (data.maxPrice !== undefined && (event.price !== undefined && event.price > data.maxPrice)) {
+          return false;
+        }
+        return true;
+      });
+      
+      // Trier selon les préférences
+      if (data.sortByPopularity) {
+        // Trier par popularité (approximée par : événements avec prix = plus populaires, puis par distance)
+        priceFilteredEvents.sort((a, b) => {
+          const aHasPrice = a.price !== undefined ? 1 : 0;
+          const bHasPrice = b.price !== undefined ? 1 : 0;
+          if (aHasPrice !== bHasPrice) {
+            return bHasPrice - aHasPrice; // Événements avec prix en premier
+          }
+          return a.distanceFromCenter - b.distanceFromCenter;
+        });
+      } else {
+        // Trier par distance
+        priceFilteredEvents.sort((a, b) => a.distanceFromCenter - b.distanceFromCenter);
+      }
+      
+      // Mettre en cache
+      await cacheRef.set({
+        events: priceFilteredEvents,
+        timestamp: Date.now(),
+        centerLatitude: data.centerLatitude,
+        centerLongitude: data.centerLongitude,
+        searchRadius: data.searchRadius,
+      });
+      
+      console.log(`Total unique events found: ${priceFilteredEvents.length} (after price filter: ${uniqueEvents.length})`);
+      return { events: priceFilteredEvents, error: null };
+    } catch (error) {
+      console.error("searchEvents error:", error);
+      return { events: [], error: String(error) };
+    }
+  }
+);
+
+/**
+ * Recherche d'événements via Ticketmaster API
+ */
+async function searchTicketmasterEvents(
+  params: EventSearchParams,
+  startDate: Date,
+  endDate: Date,
+  eventTypes: string[]
+): Promise<Event[]> {
+  const events: Event[] = [];
+  
+  try {
+    // Convertir les types d'événements en classifications Ticketmaster
+    const classifications = mapEventTypesToTicketmasterClassifications(eventTypes);
+    
+    // Construire les paramètres de requête
+    const queryParams: any = {
+      apikey: TICKETMASTER_API_KEY,
+      latlong: `${params.centerLatitude},${params.centerLongitude}`,
+      radius: Math.round(params.searchRadius * 1000), // Convertir en mètres
+      startDateTime: startDate.toISOString(),
+      endDateTime: endDate.toISOString(),
+      size: 200, // Maximum par page
+      sort: 'distance,asc',
+    };
+    
+    // Ajouter les classifications si spécifiées
+    if (classifications.length > 0) {
+      queryParams.classificationName = classifications.join(',');
+    }
+    
+    const response = await axios.get(TICKETMASTER_API_URL, {
+      params: queryParams,
+      timeout: 15000,
+    });
+    
+    if (response.data && response.data._embedded && response.data._embedded.events) {
+      const ticketmasterEvents = response.data._embedded.events;
+      
+      for (const tmEvent of ticketmasterEvents) {
+        try {
+          // Extraire les coordonnées du lieu
+          const venue = tmEvent._embedded?.venues?.[0];
+          if (!venue || !venue.location) continue;
+          
+          const lat = parseFloat(venue.location.latitude);
+          const lon = parseFloat(venue.location.longitude);
+          
+          if (isNaN(lat) || isNaN(lon)) continue;
+          
+          // Extraire la date de début
+          const eventStartDate = tmEvent.dates?.start?.dateTime 
+            ? new Date(tmEvent.dates.start.dateTime)
+            : null;
+          
+          if (!eventStartDate) continue;
+          
+          // Mapper le type d'événement
+          const eventType = mapTicketmasterClassificationToEventType(
+            tmEvent.classifications?.[0]?.segment?.name,
+            tmEvent.classifications?.[0]?.genre?.name
+          );
+          
+          // Filtrer par type si spécifié
+          if (eventTypes.length > 0 && !eventTypes.includes(eventType)) {
+            continue;
+          }
+          
+          const event: Event = {
+            id: `tm_${tmEvent.id}`,
+            name: tmEvent.name || 'Événement sans nom',
+            description: tmEvent.info || tmEvent.description || undefined,
+            type: eventType,
+            latitude: lat,
+            longitude: lon,
+            startDate: eventStartDate.toISOString(),
+            endDate: tmEvent.dates?.end?.dateTime 
+              ? new Date(tmEvent.dates.end.dateTime).toISOString()
+              : undefined,
+            locationName: venue.name,
+            city: venue.city?.name,
+            country: venue.country?.name,
+            distanceFromCenter: 0, // Sera calculé plus tard
+            imageUrl: tmEvent.images?.[0]?.url,
+            websiteUrl: tmEvent.url,
+            price: tmEvent.priceRanges?.[0]?.min,
+            priceCurrency: tmEvent.priceRanges?.[0]?.currency || 'EUR',
+          };
+          
+          events.push(event);
+        } catch (e: any) {
+          console.warn(`Error parsing Ticketmaster event: ${e.message}`);
+        }
+      }
+    }
+  } catch (error: any) {
+    console.error(`Ticketmaster API error: ${error.message}`);
+    throw error;
+  }
+  
+  return events;
+}
+
+/**
+ * Recherche d'événements via OpenEventDatabase API
+ */
+async function searchOpenEventDatabase(
+  params: EventSearchParams,
+  startDate: Date,
+  endDate: Date,
+  eventTypes: string[]
+): Promise<Event[]> {
+  const events: Event[] = [];
+  
+  try {
+    // Calculer la bounding box
+    const latDelta = params.searchRadius / 111.0;
+    const lonDelta = params.searchRadius / (111.0 * Math.cos((params.centerLatitude * Math.PI) / 180));
+    
+    const bbox = [
+      params.centerLongitude - lonDelta, // minLon
+      params.centerLatitude - latDelta,   // minLat
+      params.centerLongitude + lonDelta,  // maxLon
+      params.centerLatitude + latDelta,   // maxLat
+    ].join(',');
+    
+    // Construire l'URL avec les paramètres
+    const url = `${OPENEVENTDATABASE_API_URL}?bbox=${bbox}&limit=200`;
+    
+    const response = await axios.get(url, {
+      timeout: 15000,
+    });
+    
+    if (response.data && Array.isArray(response.data)) {
+      for (const oedEvent of response.data) {
+        try {
+          // Vérifier que l'événement est dans la période
+          const eventStart = oedEvent.when?.start 
+            ? new Date(oedEvent.when.start)
+            : null;
+          
+          if (!eventStart || eventStart < startDate || eventStart > endDate) {
+            continue;
+          }
+          
+          // Extraire les coordonnées
+          const coordinates = oedEvent.where?.[0]?.coordinates;
+          if (!coordinates || coordinates.length < 2) continue;
+          
+          const lon = parseFloat(coordinates[0]);
+          const lat = parseFloat(coordinates[1]);
+          
+          if (isNaN(lat) || isNaN(lon)) continue;
+          
+          // Vérifier la distance
+          const distance = calculateDistance(
+            params.centerLatitude,
+            params.centerLongitude,
+            lat,
+            lon
+          );
+          
+          if (distance > params.searchRadius) continue;
+          
+          // Mapper le type d'événement
+          const eventType = mapOpenEventDatabaseTypeToEventType(
+            oedEvent.what?.[0]?.tags,
+            oedEvent.what?.[0]?.name
+          );
+          
+          // Filtrer par type si spécifié
+          if (eventTypes.length > 0 && !eventTypes.includes(eventType)) {
+            continue;
+          }
+          
+          const event: Event = {
+            id: `oed_${oedEvent.id || oedEvent._id || Date.now()}`,
+            name: oedEvent.what?.[0]?.name || 'Événement sans nom',
+            description: oedEvent.what?.[0]?.description || undefined,
+            type: eventType,
+            latitude: lat,
+            longitude: lon,
+            startDate: eventStart.toISOString(),
+            endDate: oedEvent.when?.end 
+              ? new Date(oedEvent.when.end).toISOString()
+              : undefined,
+            locationName: oedEvent.where?.[0]?.name,
+            city: oedEvent.where?.[0]?.address?.locality,
+            country: oedEvent.where?.[0]?.address?.country,
+            distanceFromCenter: distance,
+            websiteUrl: oedEvent.links?.[0]?.url,
+          };
+          
+          events.push(event);
+        } catch (e: any) {
+          console.warn(`Error parsing OpenEventDatabase event: ${e.message}`);
+        }
+      }
+    }
+  } catch (error: any) {
+    console.error(`OpenEventDatabase API error: ${error.message}`);
+    throw error;
+  }
+  
+  return events;
+}
+
+/**
+ * Mappe les types d'événements vers les classifications Ticketmaster
+ */
+function mapEventTypesToTicketmasterClassifications(eventTypes: string[]): string[] {
+  const mapping: { [key: string]: string[] } = {
+    concert: ['Music'],
+    festival: ['Music', 'Festival'],
+    sport: ['Sports'],
+    culture: ['Arts', 'Miscellaneous'],
+    gastronomy: ['Miscellaneous'],
+    market: ['Miscellaneous'],
+    exhibition: ['Arts'],
+    conference: ['Miscellaneous'],
+    theater: ['Arts'],
+    cinema: ['Film'],
+  };
+  
+  const classifications: string[] = [];
+  for (const eventType of eventTypes) {
+    const mapped = mapping[eventType] || [];
+    classifications.push(...mapped);
+  }
+  
+  return [...new Set(classifications)]; // Dédupliquer
+}
+
+/**
+ * Mappe la classification Ticketmaster vers notre type d'événement
+ */
+function mapTicketmasterClassificationToEventType(
+  segment?: string,
+  genre?: string
+): string {
+  const segmentLower = segment?.toLowerCase() || '';
+  const genreLower = genre?.toLowerCase() || '';
+  
+  if (segmentLower.includes('music') || genreLower.includes('music')) {
+    if (genreLower.includes('festival')) return 'festival';
+    return 'concert';
+  }
+  
+  if (segmentLower.includes('sport')) return 'sport';
+  if (segmentLower.includes('art') || segmentLower.includes('theatre')) return 'theater';
+  if (segmentLower.includes('film')) return 'cinema';
+  if (segmentLower.includes('miscellaneous')) {
+    if (genreLower.includes('food') || genreLower.includes('gastronomy')) return 'gastronomy';
+    if (genreLower.includes('market')) return 'market';
+    if (genreLower.includes('conference')) return 'conference';
+    return 'culture';
+  }
+  
+  return 'other';
+}
+
+/**
+ * Recherche d'événements via Eventbrite API
+ */
+async function searchEventbriteEvents(
+  params: EventSearchParams,
+  startDate: Date,
+  endDate: Date,
+  eventTypes: string[]
+): Promise<Event[]> {
+  const events: Event[] = [];
+  
+  try {
+    // Construire les paramètres de requête
+    const queryParams: any = {
+      token: EVENTBRITE_API_KEY,
+      'location.latitude': params.centerLatitude.toString(),
+      'location.longitude': params.centerLongitude.toString(),
+      'location.within': `${Math.round(params.searchRadius)}km`,
+      'start_date.range_start': startDate.toISOString(),
+      'start_date.range_end': endDate.toISOString(),
+      'expand': 'venue',
+      'page_size': 100,
+    };
+    
+    // Ajouter les catégories si spécifiées
+    const categories = mapEventTypesToEventbriteCategories(eventTypes);
+    if (categories.length > 0) {
+      queryParams.categories = categories.join(',');
+    }
+    
+    const response = await axios.get(EVENTBRITE_API_URL, {
+      params: queryParams,
+      headers: {
+        'Authorization': `Bearer ${EVENTBRITE_API_KEY}`,
+      },
+      timeout: 15000,
+    });
+    
+    if (response.data && response.data.events) {
+      const eventbriteEvents = response.data.events;
+      
+      for (const ebEvent of eventbriteEvents) {
+        try {
+          // Extraire les coordonnées du lieu
+          const venue = ebEvent.venue;
+          if (!venue || !venue.latitude || !venue.longitude) continue;
+          
+          const lat = parseFloat(venue.latitude);
+          const lon = parseFloat(venue.longitude);
+          
+          if (isNaN(lat) || isNaN(lon)) continue;
+          
+          // Extraire la date de début
+          const eventStartDate = ebEvent.start?.utc 
+            ? new Date(ebEvent.start.utc)
+            : null;
+          
+          if (!eventStartDate) continue;
+          
+          // Mapper le type d'événement
+          const eventType = mapEventbriteCategoryToEventType(
+            ebEvent.category_id,
+            ebEvent.name?.text
+          );
+          
+          // Filtrer par type si spécifié
+          if (eventTypes.length > 0 && !eventTypes.includes(eventType)) {
+            continue;
+          }
+          
+          // Extraire le prix
+          let price: number | undefined;
+          let priceCurrency: string | undefined;
+          if (ebEvent.ticket_availability?.has_available_tickets && ebEvent.ticket_classes) {
+            const freeTicket = ebEvent.ticket_classes.find((tc: any) => tc.free);
+            if (!freeTicket && ebEvent.ticket_classes.length > 0) {
+              const firstTicket = ebEvent.ticket_classes[0];
+              price = firstTicket.cost?.value ? parseFloat(firstTicket.cost.value) / 100 : undefined;
+              priceCurrency = firstTicket.cost?.currency || 'EUR';
+            }
+          }
+          
+          const event: Event = {
+            id: `eb_${ebEvent.id}`,
+            name: ebEvent.name?.text || 'Événement sans nom',
+            description: ebEvent.description?.text || undefined,
+            type: eventType,
+            latitude: lat,
+            longitude: lon,
+            startDate: eventStartDate.toISOString(),
+            endDate: ebEvent.end?.utc 
+              ? new Date(ebEvent.end.utc).toISOString()
+              : undefined,
+            locationName: venue.name,
+            city: venue.address?.city,
+            country: venue.address?.country,
+            distanceFromCenter: 0, // Sera calculé plus tard
+            imageUrl: ebEvent.logo?.url,
+            websiteUrl: ebEvent.url,
+            price: price,
+            priceCurrency: priceCurrency,
+          };
+          
+          events.push(event);
+        } catch (e: any) {
+          console.warn(`Error parsing Eventbrite event: ${e.message}`);
+        }
+      }
+    }
+  } catch (error: any) {
+    console.error(`Eventbrite API error: ${error.message}`);
+    throw error;
+  }
+  
+  return events;
+}
+
+/**
+ * Mappe les types d'événements vers les catégories Eventbrite
+ */
+function mapEventTypesToEventbriteCategories(eventTypes: string[]): string[] {
+  const mapping: { [key: string]: string[] } = {
+    concert: ['103'], // Music
+    festival: ['103'], // Music
+    sport: ['108'], // Sports & Fitness
+    culture: ['105'], // Arts
+    gastronomy: ['110'], // Food & Drink
+    market: ['113'], // Other
+    exhibition: ['105'], // Arts
+    conference: ['102'], // Business & Professional
+    theater: ['105'], // Arts
+    cinema: ['104'], // Film, Media & Entertainment
+  };
+  
+  const categories: string[] = [];
+  for (const eventType of eventTypes) {
+    const mapped = mapping[eventType] || [];
+    categories.push(...mapped);
+  }
+  
+  return [...new Set(categories)]; // Dédupliquer
+}
+
+/**
+ * Mappe la catégorie Eventbrite vers notre type d'événement
+ */
+function mapEventbriteCategoryToEventType(
+  categoryId?: string,
+  eventName?: string
+): string {
+  const nameLower = (eventName || '').toLowerCase();
+  
+  // Mapping par catégorie Eventbrite
+  const categoryMapping: { [key: string]: string } = {
+    '103': 'concert', // Music
+    '108': 'sport', // Sports & Fitness
+    '105': 'culture', // Arts
+    '110': 'gastronomy', // Food & Drink
+    '102': 'conference', // Business & Professional
+    '104': 'cinema', // Film, Media & Entertainment
+  };
+  
+  if (categoryId && categoryMapping[categoryId]) {
+    const baseType = categoryMapping[categoryId];
+    // Affiner selon le nom
+    if (baseType === 'concert' && (nameLower.includes('festival') || nameLower.includes('fest'))) {
+      return 'festival';
+    }
+    if (baseType === 'culture' && (nameLower.includes('théâtre') || nameLower.includes('theatre'))) {
+      return 'theater';
+    }
+    if (baseType === 'culture' && (nameLower.includes('exposition') || nameLower.includes('exhibition'))) {
+      return 'exhibition';
+    }
+    return baseType;
+  }
+  
+  // Fallback sur le nom
+  if (nameLower.includes('festival') || nameLower.includes('fest')) return 'festival';
+  if (nameLower.includes('concert') || nameLower.includes('musique')) return 'concert';
+  if (nameLower.includes('sport')) return 'sport';
+  if (nameLower.includes('théâtre') || nameLower.includes('theatre')) return 'theater';
+  if (nameLower.includes('cinéma') || nameLower.includes('cinema') || nameLower.includes('film')) return 'cinema';
+  if (nameLower.includes('gastronomie') || nameLower.includes('food')) return 'gastronomy';
+  if (nameLower.includes('marché') || nameLower.includes('market')) return 'market';
+  if (nameLower.includes('conférence') || nameLower.includes('conference')) return 'conference';
+  if (nameLower.includes('exposition') || nameLower.includes('exhibition')) return 'exhibition';
+  
+  return 'other';
+}
+
+/**
+ * Mappe le type OpenEventDatabase vers notre type d'événement
+ */
+function mapOpenEventDatabaseTypeToEventType(
+  tags?: string[],
+  name?: string
+): string {
+  const tagsStr = (tags || []).join(' ').toLowerCase();
+  const nameStr = (name || '').toLowerCase();
+  const combined = `${tagsStr} ${nameStr}`;
+  
+  if (combined.includes('concert') || combined.includes('musique')) return 'concert';
+  if (combined.includes('festival')) return 'festival';
+  if (combined.includes('sport')) return 'sport';
+  if (combined.includes('culture') || combined.includes('culturel')) return 'culture';
+  if (combined.includes('gastronomie') || combined.includes('food')) return 'gastronomy';
+  if (combined.includes('marché') || combined.includes('market')) return 'market';
+  if (combined.includes('exposition') || combined.includes('exhibition')) return 'exhibition';
+  if (combined.includes('conférence') || combined.includes('conference')) return 'conference';
+  if (combined.includes('théâtre') || combined.includes('theatre')) return 'theater';
+  if (combined.includes('cinéma') || combined.includes('cinema') || combined.includes('film')) return 'cinema';
+  
+  return 'other';
+}
 
 /**
  * NOTE: getActivities n'est plus utilisé dans l'application.

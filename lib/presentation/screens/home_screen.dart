@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:iwantsun/core/theme/app_colors.dart';
+import 'package:iwantsun/domain/entities/search_params.dart';
 import 'package:iwantsun/presentation/widgets/recent_searches_chips.dart';
 
 /// Écran d'accueil avec sélection du mode de recherche
@@ -107,7 +108,10 @@ class HomeScreen extends StatelessWidget {
                           maxChips: 3,
                           onSearchSelected: (entry) {
                             // Pré-remplir et naviguer vers le formulaire approprié (Point 5/22)
-                            if (entry.params is AdvancedSearchParams) {
+                            if (entry.params is EventSearchParams) {
+                              // Recherche d'événements
+                              context.push('/search/event', extra: entry.params);
+                            } else if (entry.params is AdvancedSearchParams) {
                               // Recherche d'activité
                               context.push('/search/activity', extra: entry.params);
                             } else {
@@ -138,6 +142,18 @@ class HomeScreen extends StatelessWidget {
                           color: AppColors.orangeSun,
                           onTap: () {
                             context.push('/search/activity');
+                          },
+                        ),
+                        const SizedBox(height: 24),
+                        // Mode recherche d'événements
+                        _SearchModeCard(
+                          title: 'Recherche d\'Événements',
+                          description:
+                              'Recherchez des événements près de chez vous',
+                          icon: Icons.event,
+                          color: AppColors.warmPeach,
+                          onTap: () {
+                            context.push('/search/event');
                           },
                         ),
                       ],

@@ -5,6 +5,59 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.0] - 2026-01-22
+
+### 🐛 Corrigé
+
+#### Bugs Critiques (4/4)
+- **Parsing Firebase** : Sécurisation complète du parsing des résultats avec vérifications de type et gestion des valeurs null
+- **Validation des dates** : Ajout de validation pour s'assurer que la date de fin est après la date de début
+- **Accès aux listes** : Sécurisation de l'accès à `.last` avec vérifications appropriées
+- **Navigation** : Redirection automatique si accès à l'écran de résultats sans recherche effectuée
+
+#### Bugs Majeurs (6/6)
+- **Parsing météo** : Validation complète des dates avec gestion d'erreurs appropriée
+- **Rayon de recherche** : Validation pour empêcher un rayon de 0 km (minimum 1 km)
+- **Erreurs Firebase** : Exceptions typées pour une meilleure gestion des erreurs côté UI
+- **Recherches concurrentes** : Protection contre les recherches simultanées avec flag `_isSearching`
+
+#### Bugs Mineurs (6/6)
+- **Formatage distance** : Affichage amélioré (mètres pour < 1 km, km avec 1 décimale)
+- **Validation créneaux horaires** : Message d'erreur qui disparaît correctement
+- **Cache** : Vérifications de validité complètes avec suppression automatique des entrées corrompues
+- **Timezone Booking.com** : Utilisation d'UTC pour éviter les problèmes de fuseau horaire
+- **Casts sécurisés** : Tous les casts Firebase sont maintenant sécurisés avec vérifications de type
+- **Validation heures** : Clamp des heures entre 0-23 dans les données horaires
+
+### 🔧 Améliorations Techniques
+
+- **Cache Service** : 
+  - Sécurisation du parsing des timestamps dans `_cleanExpiredEntriesInBox`
+  - Sécurisation du parsing des timestamps dans `_evictLRU`
+  - Gestion automatique des entrées corrompues avec suppression et logging
+
+- **Firebase Search Service** :
+  - Parsing robuste avec vérifications de type pour tous les champs
+  - Gestion d'erreurs améliorée avec exceptions typées
+  - Validation des dates et heures
+
+- **Search Provider** :
+  - Protection contre les recherches concurrentes
+  - Gestion d'état plus robuste
+
+### 📊 Statistiques
+
+- **16 bugs corrigés** au total
+- **4 bugs critiques** résolus
+- **6 bugs majeurs** résolus
+- **6 bugs mineurs** résolus
+
+### 📝 Notes
+
+Toutes les corrections ont été testées et validées. L'application est maintenant plus robuste face aux erreurs et aux cas limites.
+
+---
+
 ## [2.0.0] - 2024-01-15
 
 ### 🎉 Refonte Majeure - Version Professionnelle

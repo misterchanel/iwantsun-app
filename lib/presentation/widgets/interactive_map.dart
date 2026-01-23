@@ -214,8 +214,6 @@ class _InteractiveMapState extends State<InteractiveMap> {
                         ),
                       );
                     },
-                    // Animation lors de la création/suppression de clusters
-                    animate: true,
                     // Zoom automatique lors du clic sur un cluster
                     zoomToBoundsOnClick: true,
                     // Taille minimale du cluster (en pixels)

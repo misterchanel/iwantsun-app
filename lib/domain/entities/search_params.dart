@@ -1,4 +1,5 @@
 import 'package:iwantsun/domain/entities/activity.dart';
+import 'package:iwantsun/domain/entities/event.dart';
 
 /// Créneaux horaires pour l'analyse météo
 enum TimeSlot {
@@ -190,6 +191,68 @@ class AdvancedSearchParams extends SearchParams {
                   ))
               .toList() ??
           const [],
+    );
+  }
+}
+
+/// Paramètres de recherche d'événements
+class EventSearchParams {
+  final double centerLatitude;
+  final double centerLongitude;
+  final double searchRadius; // en km
+  final DateTime startDate;
+  final DateTime endDate;
+  final List<EventType> eventTypes; // Types d'événements recherchés
+  final double? minPrice; // Prix minimum (optionnel)
+  final double? maxPrice; // Prix maximum (optionnel)
+  final bool? sortByPopularity; // Trier par popularité (optionnel)
+
+  const EventSearchParams({
+    required this.centerLatitude,
+    required this.centerLongitude,
+    required this.searchRadius,
+    required this.startDate,
+    required this.endDate,
+    this.eventTypes = const [],
+    this.minPrice,
+    this.maxPrice,
+    this.sortByPopularity,
+  });
+
+  /// Convertir en Map pour sauvegarde
+  Map<String, dynamic> toJson() {
+    return {
+      'centerLatitude': centerLatitude,
+      'centerLongitude': centerLongitude,
+      'searchRadius': searchRadius,
+      'startDate': startDate.toIso8601String(),
+      'endDate': endDate.toIso8601String(),
+      'eventTypes': eventTypes.map((t) => t.name).toList(),
+      'minPrice': minPrice,
+      'maxPrice': maxPrice,
+      'sortByPopularity': sortByPopularity,
+      'type': 'event',
+    };
+  }
+
+  /// Créer depuis Map
+  factory EventSearchParams.fromJson(Map<String, dynamic> json) {
+    return EventSearchParams(
+      centerLatitude: json['centerLatitude'] as double,
+      centerLongitude: json['centerLongitude'] as double,
+      searchRadius: json['searchRadius'] as double,
+      startDate: DateTime.parse(json['startDate'] as String),
+      endDate: DateTime.parse(json['endDate'] as String),
+      eventTypes: (json['eventTypes'] as List<dynamic>?)
+              ?.map((name) => EventType.values.firstWhere(
+                    (type) => type.name == name,
+                    orElse: () => EventType.other,
+                  ))
+              .toList() ??
+          const [],
+      minPrice: (json['minPrice'] as num?)?.toDouble(),
+      maxPrice: (json['maxPrice'] as num?)?.toDouble(),
+      sortByPopularity: json['sortByPopularity'] as bool?,
     );
   }
 }

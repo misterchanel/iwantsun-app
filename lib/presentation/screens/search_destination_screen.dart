@@ -10,6 +10,7 @@ import 'package:iwantsun/domain/entities/search_params.dart';
 import 'package:iwantsun/domain/entities/location.dart';
 import 'package:iwantsun/data/repositories/location_repository_impl.dart';
 import 'package:iwantsun/data/datasources/remote/location_remote_datasource.dart';
+import 'package:iwantsun/data/datasources/remote/location_remote_datasource.dart';
 import 'package:iwantsun/data/repositories/weather_repository_impl.dart';
 import 'package:iwantsun/data/datasources/remote/weather_remote_datasource.dart';
 import 'package:iwantsun/core/services/firebase_api_service.dart';
@@ -93,8 +94,10 @@ class _SearchDestinationScreenState extends State<SearchDestinationScreen> {
     if (_centerLatitude == null || _centerLongitude == null) return;
     
     try {
-      final locationRepo = LocationRepositoryImpl();
-      final location = await locationRepo.reverseGeocode(
+      final locationRepo = LocationRepositoryImpl(
+        remoteDataSource: LocationRemoteDataSourceImpl(),
+      );
+      final location = await locationRepo.geocodeLocation(
         _centerLatitude!,
         _centerLongitude!,
       );

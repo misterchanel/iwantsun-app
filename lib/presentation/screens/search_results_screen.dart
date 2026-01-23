@@ -695,7 +695,7 @@ class DestinationResultCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 2),
                           Text(
-                            _getDistanceText(result),
+                            _getDistanceText(result, context),
                             style: TextStyle(
                               fontSize: 12,
                               color: AppColors.white.withOpacity(0.85),
@@ -739,7 +739,7 @@ class DestinationResultCard extends StatelessWidget {
   }
 
   /// Calcule la distance si absente en utilisant les paramètres de recherche
-  String _getDistanceText(SearchResult result) {
+  String _getDistanceText(SearchResult result, BuildContext context) {
     if (result.location.distanceFromCenter != null) {
       final distance = result.location.distanceFromCenter!;
       return distance < 1
@@ -835,7 +835,7 @@ class DestinationResultCard extends StatelessWidget {
       case ActivityType.golf:
         return Icons.sports_golf;
       case ActivityType.camping:
-        return Icons.camping;
+        return Icons.cabin;
       default:
         return Icons.sports_soccer;
     }

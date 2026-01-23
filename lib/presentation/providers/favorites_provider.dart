@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:iwantsun/core/services/favorites_service.dart';
 import 'package:iwantsun/core/services/search_history_service.dart';
@@ -6,6 +5,8 @@ import 'package:iwantsun/core/services/gamification_service.dart';
 import 'package:iwantsun/core/services/analytics_service.dart';
 import 'package:iwantsun/domain/entities/favorite.dart';
 import 'package:iwantsun/domain/entities/search_result.dart';
+import 'package:iwantsun/domain/entities/event_favorite.dart';
+import 'package:iwantsun/domain/entities/event.dart';
 
 /// Provider pour la gestion réactive des favoris et de l'historique
 class FavoritesProvider extends ChangeNotifier {
@@ -18,6 +19,11 @@ class FavoritesProvider extends ChangeNotifier {
   List<Favorite> _favorites = [];
   bool _isLoadingFavorites = false;
   String? _favoritesError;
+
+  // État des favoris d'événements
+  List<EventFavorite> _eventFavorites = [];
+  bool _isLoadingEventFavorites = false;
+  String? _eventFavoritesError;
 
   // État de l'historique
   List<SearchHistoryEntry> _history = [];
@@ -32,6 +38,12 @@ class FavoritesProvider extends ChangeNotifier {
   bool get isLoadingFavorites => _isLoadingFavorites;
   String? get favoritesError => _favoritesError;
   int get favoritesCount => _favorites.length;
+
+  // Getters pour événements
+  List<EventFavorite> get eventFavorites => _eventFavorites;
+  bool get isLoadingEventFavorites => _isLoadingEventFavorites;
+  String? get eventFavoritesError => _eventFavoritesError;
+  int get eventFavoritesCount => _eventFavorites.length;
 
   List<SearchHistoryEntry> get history => _history;
   bool get isLoadingHistory => _isLoadingHistory;
@@ -66,6 +78,7 @@ class FavoritesProvider extends ChangeNotifier {
   Future<void> init() async {
     await Future.wait([
       loadFavorites(),
+      loadEventFavorites(),
       loadHistory(),
       loadStatistics(),
     ]);
@@ -74,6 +87,11 @@ class FavoritesProvider extends ChangeNotifier {
   /// Rafraîchir les données
   Future<void> refresh() async {
     await loadFavorites();
+  }
+
+  /// Rafraîchir les favoris d'événements
+  Future<void> refreshEventFavorites() async {
+    await loadEventFavorites();
   }
 
   /// Charger les favoris
@@ -293,6 +311,204 @@ class FavoritesProvider extends ChangeNotifier {
         f.averageTemperature >= minTemp &&
         f.averageTemperature <= maxTemp
     ).toList();
+  }
+
+  // ========== GESTION DES FAVORIS D'ÉVÉNEMENTS ==========
+
+  /// Charger les favoris d'événements
+  Future<void> loadEventFavorites() async {
+    _isLoadingEventFavorites = true;
+    _eventFavoritesError = null;
+    notifyListeners();
+
+    try {
+      _eventFavorites = await _favoritesService.getEventFavorites();
+    } catch (e) {
+      _eventFavoritesError = 'Impossible de charger les favoris d\'événements';
+    } finally {
+      _isLoadingEventFavorites = false;
+      notifyListeners();
+    }
+  }
+
+  /// Ajouter un événement aux favoris
+  Future<bool> addEventFavorite(Event event, {String? notes}) async {
+    final success = await _favoritesService.addEventFavorite(event, notes: notes);
+
+    if (success) {
+      await loadEventFavorites();
+
+      // Tracker dans les analytics
+      _analyticsService.trackFavoriteAdd(event.id, event.name);
+    }
+
+    return success;
+  }
+
+  /// Retirer un événement des favoris
+  Future<bool> removeEventFavorite(String favoriteId) async {
+    // Sauvegarder pour undo potentiel
+    final removedIndex = _eventFavorites.indexWhere((f) => f.id == favoriteId);
+    final removedFavorite = removedIndex >= 0 ? _eventFavorites[removedIndex] : null;
+
+    // Supprimer localement immédiatement pour UX fluide
+    if (removedIndex >= 0) {
+      _eventFavorites.removeAt(removedIndex);
+      notifyListeners();
+    }
+
+    final success = await _favoritesService.removeEventFavorite(favoriteId);
+
+    if (!success && removedFavorite != null) {
+      // Restaurer si échec
+      _eventFavorites.insert(removedIndex, removedFavorite);
+      notifyListeners();
+    }
+
+    return success;
+  }
+
+  /// Vérifier si un événement est en favoris
+  bool isEventFavorite(String eventId) {
+    return _eventFavorites.any((f) => f.eventId == eventId);
+  }
+
+  /// Mettre à jour les notes d'un favori d'événement
+  Future<bool> updateEventFavoriteNotes(String favoriteId, String? notes) async {
+    final success = await _favoritesService.updateEventFavoriteNotes(favoriteId, notes);
+
+    if (success) {
+      final index = _eventFavorites.indexWhere((f) => f.id == favoriteId);
+      if (index >= 0) {
+        _eventFavorites[index] = _eventFavorites[index].copyWith(notes: notes);
+        notifyListeners();
+      }
+    }
+
+    return success;
+  }
+
+  /// Vider tous les favoris d'événements
+  Future<bool> clearAllEventFavorites() async {
+    final success = await _favoritesService.clearAllEventFavorites();
+
+    if (success) {
+      _eventFavorites = [];
+      notifyListeners();
+    }
+
+    return success;
+  }
+
+  /// Exporter les favoris d'événements
+  Future<String> exportEventFavorites() async {
+    return await _favoritesService.exportEventFavorites();
+  }
+
+  /// Trier les favoris d'événements
+  void sortEventFavorites(EventFavoritesSortOption option) {
+    switch (option) {
+      case EventFavoritesSortOption.dateDesc:
+        _eventFavorites.sort((a, b) => b.savedAt.compareTo(a.savedAt));
+        break;
+      case EventFavoritesSortOption.dateAsc:
+        _eventFavorites.sort((a, b) => a.savedAt.compareTo(b.savedAt));
+        break;
+      case EventFavoritesSortOption.startDateDesc:
+        _eventFavorites.sort((a, b) => b.startDate.compareTo(a.startDate));
+        break;
+      case EventFavoritesSortOption.startDateAsc:
+        _eventFavorites.sort((a, b) => a.startDate.compareTo(b.startDate));
+        break;
+      case EventFavoritesSortOption.nameAsc:
+        _eventFavorites.sort((a, b) => a.eventName.compareTo(b.eventName));
+        break;
+      case EventFavoritesSortOption.nameDesc:
+        _eventFavorites.sort((a, b) => b.eventName.compareTo(a.eventName));
+        break;
+      case EventFavoritesSortOption.typeAsc:
+        _eventFavorites.sort((a, b) => a.eventType.name.compareTo(b.eventType.name));
+        break;
+      case EventFavoritesSortOption.typeDesc:
+        _eventFavorites.sort((a, b) => b.eventType.name.compareTo(a.eventType.name));
+        break;
+    }
+    notifyListeners();
+  }
+
+  /// Filtrer les favoris d'événements par type
+  List<EventFavorite> filterEventFavoritesByType(EventType? type) {
+    if (type == null) return _eventFavorites;
+    return _eventFavorites.where((f) => f.eventType == type).toList();
+  }
+
+  /// Filtrer les favoris d'événements par pays
+  List<EventFavorite> filterEventFavoritesByCountry(String? country) {
+    if (country == null) return _eventFavorites;
+    return _eventFavorites.where((f) => f.country == country).toList();
+  }
+
+  /// Obtenir les événements à venir
+  List<EventFavorite> getUpcomingEventFavorites() {
+    return _eventFavorites.where((f) => f.isUpcoming).toList();
+  }
+
+  /// Obtenir les événements en cours
+  List<EventFavorite> getOngoingEventFavorites() {
+    return _eventFavorites.where((f) => f.isOngoing).toList();
+  }
+}
+
+/// Options de tri pour les favoris d'événements
+enum EventFavoritesSortOption {
+  dateDesc,
+  dateAsc,
+  startDateDesc,
+  startDateAsc,
+  nameAsc,
+  nameDesc,
+  typeAsc,
+  typeDesc,
+}
+
+/// Extension pour obtenir le label de l'option de tri
+extension EventFavoritesSortOptionExtension on EventFavoritesSortOption {
+  String get label {
+    switch (this) {
+      case EventFavoritesSortOption.dateDesc:
+        return 'Plus récent';
+      case EventFavoritesSortOption.dateAsc:
+        return 'Plus ancien';
+      case EventFavoritesSortOption.startDateDesc:
+        return 'Date événement (récent)';
+      case EventFavoritesSortOption.startDateAsc:
+        return 'Date événement (proche)';
+      case EventFavoritesSortOption.nameAsc:
+        return 'A → Z';
+      case EventFavoritesSortOption.nameDesc:
+        return 'Z → A';
+      case EventFavoritesSortOption.typeAsc:
+        return 'Type (A → Z)';
+      case EventFavoritesSortOption.typeDesc:
+        return 'Type (Z → A)';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case EventFavoritesSortOption.dateDesc:
+      case EventFavoritesSortOption.dateAsc:
+        return Icons.calendar_today;
+      case EventFavoritesSortOption.startDateDesc:
+      case EventFavoritesSortOption.startDateAsc:
+        return Icons.event;
+      case EventFavoritesSortOption.nameAsc:
+      case EventFavoritesSortOption.nameDesc:
+        return Icons.sort_by_alpha;
+      case EventFavoritesSortOption.typeAsc:
+      case EventFavoritesSortOption.typeDesc:
+        return Icons.category;
+    }
   }
 }
 

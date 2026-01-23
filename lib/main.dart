@@ -4,7 +4,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:iwantsun/firebase_options.dart';
 import 'package:iwantsun/core/router/app_router.dart';
 import 'package:iwantsun/core/config/env_config.dart';
@@ -14,6 +13,7 @@ import 'package:iwantsun/core/services/favorites_service.dart';
 import 'package:iwantsun/core/services/search_history_service.dart';
 import 'package:iwantsun/core/services/offline_service.dart';
 import 'package:iwantsun/core/services/gamification_service.dart';
+import 'package:iwantsun/core/services/event_notification_service.dart';
 import 'package:iwantsun/core/l10n/app_localizations.dart';
 import 'package:iwantsun/presentation/providers/provider_setup.dart';
 import 'package:iwantsun/core/theme/app_theme.dart';
@@ -113,6 +113,25 @@ void main() async {
     logger.info('Gamification service initialized successfully');
   } catch (e) {
     logger.error('Failed to initialize gamification service', e);
+  }
+
+  // Initialiser le service de notifications d'événements
+  try {
+    final notificationService = EventNotificationService();
+    await notificationService.initialize();
+    
+    // Configurer le callback de navigation
+    notificationService.setNavigationCallback((eventId) {
+      // Navigation sera gérée par l'app via le router
+      // On navigue vers la recherche d'événements
+      // L'utilisateur pourra rechercher l'événement ou voir l'historique
+      AppRouter.router.go('/search/event');
+      logger.info('Notification callback: navigating to event search for event $eventId');
+    });
+    
+    logger.info('Event notification service initialized successfully');
+  } catch (e) {
+    logger.error('Failed to initialize event notification service', e);
   }
 
   runApp(const IWantSunApp());

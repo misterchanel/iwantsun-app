@@ -176,7 +176,14 @@ class SearchProvider extends ChangeNotifier {
           _updateState(SearchEmpty(message: message));
           return;
         case FirebaseErrorType.networkError:
-          message = 'Erreur de connexion avec le serveur. Vérifiez votre connexion Internet.';
+          // Message spécifique pour erreurs Overpass
+          if (e.message.contains('serveurs de données géographiques') || 
+              e.message.contains('indisponibles')) {
+            message = 'Les serveurs de données géographiques sont temporairement indisponibles.\n\n'
+                'Veuillez réessayer dans quelques instants. Si le problème persiste, essayez d\'élargir votre zone de recherche.';
+          } else {
+            message = 'Erreur de connexion avec le serveur. Vérifiez votre connexion Internet.';
+          }
           failure = NetworkFailure(message);
           break;
         case FirebaseErrorType.timeout:

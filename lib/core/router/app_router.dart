@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:iwantsun/domain/entities/search_params.dart';
+import 'package:iwantsun/domain/entities/event.dart';
 import 'package:iwantsun/presentation/screens/welcome_screen.dart';
 import 'package:iwantsun/presentation/screens/onboarding_screen.dart';
 import 'package:iwantsun/presentation/screens/home_screen.dart';
 import 'package:iwantsun/presentation/screens/search_destination_screen.dart';
 import 'package:iwantsun/presentation/screens/search_activity_screen.dart';
+import 'package:iwantsun/presentation/screens/search_event_screen.dart';
+import 'package:iwantsun/presentation/screens/search_event_results_screen.dart';
 import 'package:iwantsun/presentation/screens/search_results_screen.dart';
 import 'package:iwantsun/presentation/screens/favorites_screen_enhanced.dart';
 import 'package:iwantsun/presentation/screens/history_screen.dart';
@@ -74,6 +77,19 @@ class AppRouter {
         },
       ),
       GoRoute(
+        path: '/search/event',
+        pageBuilder: (context, state) {
+          final params = state.extra as EventSearchParams?;
+          return CustomTransitionPage(
+            key: state.pageKey,
+            child: SearchEventScreen(prefillParams: params),
+            transitionsBuilder: AppAnimations.slideTransition(
+              direction: SlideDirection.left,
+            ),
+          );
+        },
+      ),
+      GoRoute(
         path: '/search/results',
         pageBuilder: (context, state) => CustomTransitionPage(
           key: state.pageKey,
@@ -82,6 +98,22 @@ class AppRouter {
             direction: SlideDirection.up,
           ),
         ),
+      ),
+      GoRoute(
+        path: '/search/event-results',
+        pageBuilder: (context, state) {
+          final data = state.extra as Map<String, dynamic>?;
+          return CustomTransitionPage(
+            key: state.pageKey,
+            child: SearchEventResultsScreen(
+              params: data?['params'] as EventSearchParams?,
+              events: data?['events'] as List<Event>? ?? [],
+            ),
+            transitionsBuilder: AppAnimations.slideTransition(
+              direction: SlideDirection.up,
+            ),
+          );
+        },
       ),
       GoRoute(
         path: '/favorites',

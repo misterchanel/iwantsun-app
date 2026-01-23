@@ -55,6 +55,17 @@ class FirebaseSearchService {
       if (data['error'] != null) {
         final errorMessage = (data['error'] as String?)?.toString() ?? 'Erreur inconnue';
         _logger.error('Firebase function error: $errorMessage');
+        
+        // Détecter les erreurs Overpass spécifiques
+        if (errorMessage.contains('serveurs de données géographiques') || 
+            errorMessage.contains('indisponibles') ||
+            errorMessage.contains('Overpass')) {
+          throw FirebaseSearchException(
+            errorMessage,
+            FirebaseErrorType.networkError, // Traiter comme erreur réseau
+          );
+        }
+        
         // Si c'est une erreur explicite (pas de villes trouvées), la propager
         if (errorMessage.contains('Aucune ville trouvée')) {
           throw FirebaseSearchException(errorMessage, FirebaseErrorType.noResults);
@@ -145,9 +156,38 @@ class FirebaseSearchService {
               type = ActivityType.other;
             }
             
+            // Obtenir le nom d'affichage depuis le type
+            String displayName;
+            switch (type) {
+              case ActivityType.beach:
+                displayName = 'Plage / Baignade';
+                break;
+              case ActivityType.hiking:
+                displayName = 'Randonnée / Trekking';
+                break;
+              case ActivityType.skiing:
+                displayName = 'Ski / Sports d\'hiver';
+                break;
+              case ActivityType.surfing:
+                displayName = 'Surf / Windsurf';
+                break;
+              case ActivityType.cycling:
+                displayName = 'Vélo / VTT';
+                break;
+              case ActivityType.golf:
+                displayName = 'Golf';
+                break;
+              case ActivityType.camping:
+                displayName = 'Camping';
+                break;
+              case ActivityType.other:
+                displayName = (activityMap['name'] as String?)?.toString() ?? 'Autre';
+                break;
+            }
+            
             return Activity(
               type: type,
-              name: (activityMap['name'] as String?)?.toString() ?? type.displayName,
+              name: (activityMap['name'] as String?)?.toString() ?? displayName,
               description: activityMap['description'] as String?,
               latitude: (activityMap['latitude'] is num
                   ? (activityMap['latitude'] as num).toDouble()

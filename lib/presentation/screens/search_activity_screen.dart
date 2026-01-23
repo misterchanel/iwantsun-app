@@ -10,6 +10,7 @@ import 'package:iwantsun/domain/entities/search_params.dart';
 import 'package:iwantsun/domain/entities/location.dart';
 import 'package:iwantsun/data/repositories/location_repository_impl.dart';
 import 'package:iwantsun/data/datasources/remote/location_remote_datasource.dart';
+import 'package:iwantsun/data/datasources/remote/location_remote_datasource.dart';
 import 'package:iwantsun/data/repositories/weather_repository_impl.dart';
 import 'package:iwantsun/data/datasources/remote/weather_remote_datasource.dart';
 import 'package:iwantsun/core/services/firebase_api_service.dart';
@@ -99,8 +100,10 @@ class _SearchActivityScreenState extends State<SearchActivityScreen> {
     if (_centerLatitude == null || _centerLongitude == null) return;
     
     try {
-      final locationRepo = LocationRepositoryImpl();
-      final location = await locationRepo.reverseGeocode(
+      final locationRepo = LocationRepositoryImpl(
+        remoteDataSource: LocationRemoteDataSourceImpl(),
+      );
+      final location = await locationRepo.geocodeLocation(
         _centerLatitude!,
         _centerLongitude!,
       );
@@ -1096,7 +1099,7 @@ class _SearchActivityScreenState extends State<SearchActivityScreen> {
 
   Widget _buildActivityChip(ActivityType activity) {
     final isSelected = _selectedActivities.contains(activity);
-    final activityEntity = Activity(type: activity, name: activity.displayName);
+    final activityEntity = Activity(type: activity, name: _getActivityDisplayName(activity));
     
     IconData iconData;
     switch (activity) {
@@ -1119,27 +1122,46 @@ class _SearchActivityScreenState extends State<SearchActivityScreen> {
         iconData = Icons.sports_golf;
         break;
       case ActivityType.camping:
-        iconData = Icons.camping;
+        iconData = Icons.cabin;
         break;
       default:
         iconData = Icons.sports_soccer;
     }
-
+    
     return FilterChip(
       selected: isSelected,
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(iconData, size: 18),
-          const SizedBox(width: 6),
-          Text(activityEntity.displayName),
-        ],
-      ),
-      onSelected: (_) => _toggleActivity(activity),
+      label: Text(_getActivityDisplayName(activity)),
+      avatar: Icon(iconData, size: 18),
+      onSelected: (selected) => _toggleActivity(activity),
       selectedColor: AppColors.primaryOrange.withOpacity(0.2),
       checkmarkColor: AppColors.primaryOrange,
-      backgroundColor: AppColors.lightGray.withOpacity(0.5),
+      labelStyle: TextStyle(
+        color: isSelected ? AppColors.primaryOrange : AppColors.darkGray,
+        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     );
+  }
+
+  String _getActivityDisplayName(ActivityType activity) {
+    switch (activity) {
+      case ActivityType.beach:
+        return 'Plage / Baignade';
+      case ActivityType.hiking:
+        return 'Randonnée / Trekking';
+      case ActivityType.skiing:
+        return 'Ski / Sports d\'hiver';
+      case ActivityType.surfing:
+        return 'Surf / Windsurf';
+      case ActivityType.cycling:
+        return 'Vélo / VTT';
+      case ActivityType.golf:
+        return 'Golf';
+      case ActivityType.camping:
+        return 'Camping';
+      case ActivityType.other:
+        return 'Autre';
+    }
   }
 
   Widget _buildSection({

@@ -6,6 +6,8 @@ import 'package:iwantsun/data/models/activity_model.dart';
 import 'package:iwantsun/data/models/hotel_model.dart';
 import 'package:iwantsun/domain/entities/activity.dart';
 import 'package:iwantsun/domain/entities/weather.dart';
+import 'package:iwantsun/domain/entities/event.dart';
+import 'package:iwantsun/domain/entities/search_params.dart';
 
 /// Service unifié pour appeler toutes les Firebase Functions remplaçant les APIs directes
 class FirebaseApiService {
@@ -427,5 +429,72 @@ class FirebaseApiService {
 
   String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Recherche d'événements
+  Future<List<Event>> searchEvents(EventSearchParams params) async {
+    try {
+      _logger.info('Calling Firebase searchEvents function');
+
+      final callable = _functions.httpsCallable(
+        'searchEvents',
+        options: HttpsCallableOptions(
+          timeout: const Duration(seconds: 60),
+        ),
+      );
+
+      final response = await callable.call<Map<String, dynamic>>({
+        'centerLatitude': params.centerLatitude,
+        'centerLongitude': params.centerLongitude,
+        'searchRadius': params.searchRadius,
+        'startDate': params.startDate.toIso8601String(),
+        'endDate': params.endDate.toIso8601String(),
+        'eventTypes': params.eventTypes.map((t) => t.name).toList(),
+        'minPrice': params.minPrice,
+        'maxPrice': params.maxPrice,
+        'sortByPopularity': params.sortByPopularity,
+      });
+
+      final data = response.data;
+      if (data['error'] != null) {
+        _logger.error('Firebase function error: ${data['error']}');
+        throw Exception(data['error']);
+      }
+
+      final eventsJson = data['events'] as List<dynamic>?;
+      if (eventsJson == null) {
+        return [];
+      }
+
+      return eventsJson.map((json) {
+        final eventMap = Map<String, dynamic>.from(json as Map);
+        return Event(
+          id: eventMap['id'] as String,
+          name: eventMap['name'] as String,
+          description: eventMap['description'] as String?,
+          type: EventType.values.firstWhere(
+            (t) => t.name == eventMap['type'],
+            orElse: () => EventType.other,
+          ),
+          latitude: (eventMap['latitude'] as num).toDouble(),
+          longitude: (eventMap['longitude'] as num).toDouble(),
+          startDate: DateTime.parse(eventMap['startDate'] as String),
+          endDate: eventMap['endDate'] != null
+              ? DateTime.parse(eventMap['endDate'] as String)
+              : null,
+          locationName: eventMap['locationName'] as String?,
+          city: eventMap['city'] as String?,
+          country: eventMap['country'] as String?,
+          distanceFromCenter: (eventMap['distanceFromCenter'] as num?)?.toDouble(),
+          imageUrl: eventMap['imageUrl'] as String?,
+          websiteUrl: eventMap['websiteUrl'] as String?,
+          price: (eventMap['price'] as num?)?.toDouble(),
+          priceCurrency: eventMap['priceCurrency'] as String?,
+        );
+      }).toList();
+    } catch (e, stackTrace) {
+      _logger.error('Error calling searchEvents', e, stackTrace);
+      rethrow;
+    }
   }
 }

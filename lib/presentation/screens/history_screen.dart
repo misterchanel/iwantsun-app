@@ -258,8 +258,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
       }
     }
   }
-    // Navigation vers l'écran de recherche avec les paramètres pré-remplis
-    context.go('/search/destination', extra: entry.params);
+
+  /// Affiche les résultats sauvegardés (Point 12)
+  void _viewResults(SearchHistoryEntry entry) {
+    if (entry.results != null && entry.results!.isNotEmpty) {
+      final searchProvider = context.read<SearchProvider>();
+      searchProvider.setResults(entry.results!);
+      context.push('/search/results');
+    }
   }
 
   Future<void> _deleteEntry(SearchHistoryEntry entry) async {
