@@ -225,33 +225,27 @@ class FirebaseApiService {
     }
   }
 
-  /// Récupération des activités via Overpass
-  /// NOTE: Cette fonction n'est plus utilisée dans l'application.
-  /// La fonctionnalité activités permet de sélectionner les types d'activités souhaitées dans l'UI,
-  /// mais les activités ne sont jamais récupérées depuis l'API pour être affichées.
-  /// ActivityRepository est configuré mais jamais appelé dans l'UI.
-  /// Cette méthode peut être réactivée si nécessaire dans le futur.
-  /*
-  Future<List<ActivityModel>> getActivities({
+  /// Recherche d'activités (POI) via Overpass
+  Future<List<ActivityModel>> searchActivities({
     required double latitude,
     required double longitude,
     required double radiusKm,
     required List<ActivityType> activityTypes,
   }) async {
     try {
-      _logger.info('Calling Firebase getActivities function');
+      _logger.info('Calling Firebase searchActivities function');
 
       final callable = _functions.httpsCallable(
-        'getActivities',
+        'searchActivities',
         options: HttpsCallableOptions(
-          timeout: const Duration(seconds: 45),
+          timeout: const Duration(seconds: 60),
         ),
       );
 
       final response = await callable.call<Map<String, dynamic>>({
-        'latitude': latitude,
-        'longitude': longitude,
-        'radiusKm': radiusKm,
+        'centerLatitude': latitude,
+        'centerLongitude': longitude,
+        'searchRadius': radiusKm,
         'activityTypes': activityTypes.map((type) => type.name).toList(),
       });
 
@@ -280,17 +274,16 @@ class FirebaseApiService {
           type: type,
           name: activityJson['name']?.toString() ?? '',
           description: activityJson['description']?.toString(),
-          latitude: (activityJson['latitude'] as num?)?.toDouble() ?? 0.0,
-          longitude: (activityJson['longitude'] as num?)?.toDouble() ?? 0.0,
-          distanceFromLocation: (activityJson['distanceFromLocation'] as num?)?.toDouble(),
+          latitude: (activityJson['latitude'] as num?)?.toDouble(),
+          longitude: (activityJson['longitude'] as num?)?.toDouble(),
+          distanceFromLocation: (activityJson['distance'] as num?)?.toDouble(),
         );
       }).toList();
     } catch (e, stackTrace) {
-      _logger.error('Error calling getActivities', e, stackTrace);
+      _logger.error('Error calling searchActivities', e, stackTrace);
       rethrow;
     }
   }
-  */
 
   /// Récupération des hôtels via Overpass
   /// NOTE: Cette fonction n'est plus utilisée dans l'application.

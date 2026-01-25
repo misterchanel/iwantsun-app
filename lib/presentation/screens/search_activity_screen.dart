@@ -600,14 +600,44 @@ class _SearchActivityScreenState extends State<SearchActivityScreen> {
       desiredActivities: _selectedActivities,
     );
 
-    // Lancer la recherche via le provider
-    final searchProvider = context.read<SearchProvider>();
-    await searchProvider.search(searchParams);
+    // Afficher un indicateur de chargement
+    setState(() {
+      _isSearchingLocation = true;
+    });
 
-    if (!mounted) return;
+    try {
+      // Rechercher les activités via Firebase
+      final firebaseApi = FirebaseApiService();
+      final activities = await firebaseApi.searchActivities(
+        latitude: _centerLatitude!,
+        longitude: _centerLongitude!,
+        radiusKm: _searchRadius,
+        activityTypes: _selectedActivities,
+      );
 
-    // Naviguer vers les résultats
-    context.push('/search/results');
+      if (!mounted) return;
+
+      setState(() {
+        _isSearchingLocation = false;
+      });
+
+      // Naviguer vers les résultats d'activités
+      context.push('/search/activity-results', extra: {
+        'params': searchParams,
+        'activities': activities.map((a) => a.toEntity()).toList(),
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isSearchingLocation = false;
+      });
+
+      ErrorSnackBar.show(
+        context,
+        'Erreur lors de la recherche: ${e.toString()}',
+      );
+    }
   }
 
   @override

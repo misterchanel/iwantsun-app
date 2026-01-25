@@ -56,12 +56,34 @@ class ActivityRemoteDataSourceImpl implements ActivityRemoteDataSource {
       _logger.warning('Failed to load activities from cache', e);
     }
 
-    // NOTE: La fonctionnalité activités n'est plus utilisée dans l'application.
-    // Les types d'activités peuvent être sélectionnés dans l'UI (search_activity_screen.dart)
-    // mais les activités ne sont jamais récupérées depuis l'API pour être affichées.
-    // La Firebase Function getActivities a été désactivée car ActivityRepository n'est jamais appelé dans l'UI.
-    // Cette fonctionnalité peut être réactivée si nécessaire dans le futur.
-    _logger.warning('getActivitiesNearLocation called but activities feature is disabled');
-    return [];
+    // Appeler Firebase pour récupérer les activités
+    try {
+      _logger.info('Fetching activities from Firebase');
+      final activities = await _firebaseApi.searchActivities(
+        latitude: latitude,
+        longitude: longitude,
+        radiusKm: radiusKm,
+        activityTypes: activityTypes,
+      );
+
+      // Mettre en cache les résultats
+      if (activities.isNotEmpty) {
+        try {
+          await _cacheService.put(
+            cacheKey,
+            activities.map((a) => a.toJson()).toList(),
+            CacheService.activityCacheBox,
+          );
+          _logger.info('Cached ${activities.length} activities');
+        } catch (e) {
+          _logger.warning('Failed to cache activities', e);
+        }
+      }
+
+      return activities;
+    } catch (e, stackTrace) {
+      _logger.error('Failed to fetch activities from Firebase', e, stackTrace);
+      rethrow;
+    }
   }
 }

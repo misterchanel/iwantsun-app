@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:iwantsun/domain/entities/search_params.dart';
 import 'package:iwantsun/domain/entities/event.dart';
+import 'package:iwantsun/domain/entities/activity.dart';
 import 'package:iwantsun/presentation/screens/welcome_screen.dart';
 import 'package:iwantsun/presentation/screens/onboarding_screen.dart';
 import 'package:iwantsun/presentation/screens/home_screen.dart';
 import 'package:iwantsun/presentation/screens/search_destination_screen.dart';
 import 'package:iwantsun/presentation/screens/search_activity_screen.dart';
+import 'package:iwantsun/presentation/screens/search_activity_results_screen.dart';
 import 'package:iwantsun/presentation/screens/search_event_screen.dart';
 import 'package:iwantsun/presentation/screens/search_event_results_screen.dart';
 import 'package:iwantsun/presentation/screens/search_results_screen.dart';
@@ -108,6 +110,22 @@ class AppRouter {
             child: SearchEventResultsScreen(
               params: data?['params'] as EventSearchParams?,
               events: data?['events'] as List<Event>? ?? [],
+            ),
+            transitionsBuilder: AppAnimations.slideTransition(
+              direction: SlideDirection.up,
+            ),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/search/activity-results',
+        pageBuilder: (context, state) {
+          final data = state.extra as Map<String, dynamic>?;
+          return CustomTransitionPage(
+            key: state.pageKey,
+            child: SearchActivityResultsScreen(
+              params: data?['params'] as AdvancedSearchParams?,
+              activities: data?['activities'] as List<Activity>? ?? [],
             ),
             transitionsBuilder: AppAnimations.slideTransition(
               direction: SlideDirection.up,

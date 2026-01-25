@@ -1814,13 +1814,322 @@ function mapOpenEventDatabaseTypeToEventType(
 }
 
 /**
- * NOTE: getActivities n'est plus utilisé dans l'application.
- * La fonctionnalité activités est configurée (sélection des types d'activités dans l'UI)
- * mais les activités ne sont jamais récupérées depuis l'API pour être affichées.
- * ActivityRepository est configuré mais jamais appelé dans l'UI.
- * Cette fonction peut être réactivée si nécessaire dans le futur.
+ * Recherche d'activités (POI) via Overpass API
  */
-// export const getActivities = onCall(...)
+interface ActivitySearchParams {
+  centerLatitude: number;
+  centerLongitude: number;
+  searchRadius: number;
+  activityTypes: string[]; // Types d'activités recherchées: beach, hiking, skiing, surfing, cycling, golf, camping
+}
+
+interface ActivityPOI {
+  id: string;
+  name: string;
+  type: string;
+  description?: string;
+  latitude: number;
+  longitude: number;
+  distance: number;
+  address?: string;
+  website?: string;
+  phone?: string;
+  openingHours?: string;
+}
+
+export const searchActivities = onCall(
+  {
+    region: "europe-west1",
+    timeoutSeconds: 60,
+    memory: "256MiB",
+  },
+  async (request) => {
+    const data = request.data as ActivitySearchParams;
+
+    // Validation
+    if (data.searchRadius <= 0 || data.searchRadius > MAX_SEARCH_RADIUS_KM) {
+      return { activities: [], error: "Invalid search radius" };
+    }
+
+    if (!data.activityTypes || data.activityTypes.length === 0) {
+      return { activities: [], error: "At least one activity type is required" };
+    }
+
+    console.log("Activity search request received:", JSON.stringify(data));
+
+    try {
+      // Vérifier le cache
+      const cacheKey = `activities_${data.centerLatitude.toFixed(4)}_${data.centerLongitude.toFixed(4)}_${data.searchRadius.toFixed(0)}_${data.activityTypes.sort().join(',')}`;
+      const cacheRef = db.collection("cache_activities").doc(cacheKey);
+      const cached = await cacheRef.get();
+
+      if (cached.exists) {
+        const cacheData = cached.data();
+        if (cacheData && Date.now() - cacheData.timestamp < CACHE_DURATION_HOURS * 3600000) {
+          console.log("Cache hit for activities");
+          return { activities: cacheData.activities as ActivityPOI[], error: null };
+        }
+      }
+
+      // Construire la requête Overpass pour les types d'activités
+      const overpassFilters = buildOverpassActivityFilters(data.activityTypes);
+
+      if (overpassFilters.length === 0) {
+        return { activities: [], error: "No valid activity types provided" };
+      }
+
+      const activities = await fetchActivitiesFromOverpass(
+        data.centerLatitude,
+        data.centerLongitude,
+        data.searchRadius,
+        overpassFilters
+      );
+
+      // Trier par distance
+      activities.sort((a, b) => a.distance - b.distance);
+
+      // Limiter à 100 résultats
+      const limitedActivities = activities.slice(0, 100);
+
+      // Mettre en cache
+      await cacheRef.set({
+        activities: limitedActivities,
+        timestamp: Date.now(),
+        centerLatitude: data.centerLatitude,
+        centerLongitude: data.centerLongitude,
+        searchRadius: data.searchRadius,
+      });
+
+      console.log(`Found ${limitedActivities.length} activities`);
+      return { activities: limitedActivities, error: null };
+    } catch (error) {
+      console.error("searchActivities error:", error);
+      return { activities: [], error: String(error) };
+    }
+  }
+);
+
+/**
+ * Construit les filtres Overpass pour les types d'activités
+ */
+function buildOverpassActivityFilters(activityTypes: string[]): string[] {
+  const filters: string[] = [];
+
+  for (const activityType of activityTypes) {
+    switch (activityType.toLowerCase()) {
+      case 'beach':
+        filters.push('node["natural"="beach"]');
+        filters.push('way["natural"="beach"]');
+        filters.push('node["leisure"="beach_resort"]');
+        filters.push('way["leisure"="beach_resort"]');
+        filters.push('node["amenity"="swimming_pool"]["access"!="private"]');
+        break;
+      case 'hiking':
+        filters.push('node["tourism"="viewpoint"]');
+        filters.push('node["natural"="peak"]');
+        filters.push('relation["route"="hiking"]');
+        filters.push('way["highway"="path"]["sac_scale"]');
+        filters.push('node["information"="trailhead"]');
+        break;
+      case 'skiing':
+        filters.push('node["aerialway"="station"]');
+        filters.push('way["piste:type"]');
+        filters.push('node["sport"="skiing"]');
+        filters.push('way["landuse"="winter_sports"]');
+        filters.push('relation["site"="piste"]');
+        break;
+      case 'surfing':
+        filters.push('node["sport"="surfing"]');
+        filters.push('node["sport"="kitesurfing"]');
+        filters.push('node["sport"="windsurfing"]');
+        filters.push('node["leisure"="water_park"]');
+        filters.push('way["sport"="surfing"]');
+        break;
+      case 'cycling':
+        filters.push('node["amenity"="bicycle_rental"]');
+        filters.push('relation["route"="bicycle"]');
+        filters.push('node["shop"="bicycle"]');
+        filters.push('way["highway"="cycleway"]["name"]');
+        break;
+      case 'golf':
+        filters.push('node["leisure"="golf_course"]');
+        filters.push('way["leisure"="golf_course"]');
+        filters.push('node["sport"="golf"]');
+        break;
+      case 'camping':
+        filters.push('node["tourism"="camp_site"]');
+        filters.push('way["tourism"="camp_site"]');
+        filters.push('node["tourism"="caravan_site"]');
+        filters.push('way["tourism"="caravan_site"]');
+        break;
+    }
+  }
+
+  return filters;
+}
+
+/**
+ * Récupère les activités depuis Overpass API
+ */
+async function fetchActivitiesFromOverpass(
+  lat: number,
+  lon: number,
+  radiusKm: number,
+  filters: string[]
+): Promise<ActivityPOI[]> {
+  const radiusMeters = radiusKm * 1000;
+  const activities: ActivityPOI[] = [];
+
+  // Construire la requête Overpass avec tous les filtres
+  const filterQueries = filters
+    .map(filter => `${filter}(around:${radiusMeters},${lat},${lon});`)
+    .join('\n');
+
+  const query = `
+[out:json][timeout:30];
+(
+${filterQueries}
+);
+out body center;
+`;
+
+  const errors: string[] = [];
+
+  for (const serverUrl of OVERPASS_SERVERS) {
+    try {
+      console.log(`Fetching activities from ${serverUrl}`);
+
+      const response = await axios.post(serverUrl, query, {
+        headers: { "Content-Type": "text/plain" },
+        timeout: 25000,
+      });
+
+      const elements = response.data.elements || [];
+
+      for (const element of elements) {
+        const tags = element.tags || {};
+        const name = tags.name || tags["name:fr"] || tags["name:en"];
+
+        // Ignorer les éléments sans nom (sauf pour certains types)
+        if (!name && !tags.natural && !tags.aerialway) continue;
+
+        const elemLat = element.type === "node" ? element.lat : (element.center?.lat ?? element.lat);
+        const elemLon = element.type === "node" ? element.lon : (element.center?.lon ?? element.lon);
+
+        if (!elemLat || !elemLon) continue;
+
+        const distance = calculateDistance(lat, lon, elemLat, elemLon);
+        if (distance > radiusKm) continue;
+
+        // Déterminer le type d'activité
+        const activityType = determineActivityType(tags);
+
+        const activity: ActivityPOI = {
+          id: `osm_${element.type}_${element.id}`,
+          name: name || generateActivityName(tags, activityType),
+          type: activityType,
+          description: tags.description || tags["description:fr"] || undefined,
+          latitude: elemLat,
+          longitude: elemLon,
+          distance: Math.round(distance * 10) / 10, // Arrondir à 1 décimale
+          address: buildAddress(tags),
+          website: tags.website || tags.url || undefined,
+          phone: tags.phone || tags["contact:phone"] || undefined,
+          openingHours: tags.opening_hours || undefined,
+        };
+
+        activities.push(activity);
+      }
+
+      console.log(`Found ${activities.length} activities from ${serverUrl}`);
+      return activities;
+    } catch (error: any) {
+      const errorMsg = error?.message || String(error);
+      console.warn(`Overpass server ${serverUrl} failed: ${errorMsg}`);
+      errors.push(`${serverUrl}: ${errorMsg}`);
+    }
+  }
+
+  console.error(`All Overpass servers failed for activities. Errors: ${errors.join('; ')}`);
+  return activities;
+}
+
+/**
+ * Détermine le type d'activité basé sur les tags OSM
+ */
+function determineActivityType(tags: any): string {
+  if (tags.natural === "beach" || tags.leisure === "beach_resort") return "beach";
+  if (tags.amenity === "swimming_pool") return "beach";
+
+  if (tags.tourism === "viewpoint" || tags.natural === "peak") return "hiking";
+  if (tags.route === "hiking" || tags.sac_scale) return "hiking";
+  if (tags.information === "trailhead") return "hiking";
+
+  if (tags.aerialway || tags["piste:type"] || tags.landuse === "winter_sports") return "skiing";
+  if (tags.sport === "skiing") return "skiing";
+
+  if (tags.sport === "surfing" || tags.sport === "kitesurfing" || tags.sport === "windsurfing") return "surfing";
+  if (tags.leisure === "water_park") return "surfing";
+
+  if (tags.amenity === "bicycle_rental" || tags.route === "bicycle") return "cycling";
+  if (tags.shop === "bicycle" || tags.highway === "cycleway") return "cycling";
+
+  if (tags.leisure === "golf_course" || tags.sport === "golf") return "golf";
+
+  if (tags.tourism === "camp_site" || tags.tourism === "caravan_site") return "camping";
+
+  return "other";
+}
+
+/**
+ * Génère un nom pour les activités sans nom
+ */
+function generateActivityName(tags: any, activityType: string): string {
+  const typeNames: { [key: string]: string } = {
+    beach: "Plage",
+    hiking: "Point de vue",
+    skiing: "Station de ski",
+    surfing: "Spot de surf",
+    cycling: "Piste cyclable",
+    golf: "Golf",
+    camping: "Camping",
+    other: "Activité",
+  };
+
+  const baseName = typeNames[activityType] || "Lieu";
+
+  // Ajouter des détails si disponibles
+  if (tags.natural === "peak" && tags.ele) {
+    return `Sommet (${tags.ele}m)`;
+  }
+  if (tags.aerialway === "station") {
+    return "Station de téléphérique";
+  }
+  if (tags["piste:type"]) {
+    return `Piste ${tags["piste:difficulty"] || ""}`.trim();
+  }
+
+  return baseName;
+}
+
+/**
+ * Construit l'adresse à partir des tags
+ */
+function buildAddress(tags: any): string | undefined {
+  const parts: string[] = [];
+
+  if (tags["addr:street"]) {
+    if (tags["addr:housenumber"]) {
+      parts.push(`${tags["addr:housenumber"]} ${tags["addr:street"]}`);
+    } else {
+      parts.push(tags["addr:street"]);
+    }
+  }
+  if (tags["addr:city"]) parts.push(tags["addr:city"]);
+  if (tags["addr:postcode"]) parts.push(tags["addr:postcode"]);
+
+  return parts.length > 0 ? parts.join(", ") : undefined;
+}
 
 /**
  * NOTE: getHotels n'est plus utilisé dans l'application.
